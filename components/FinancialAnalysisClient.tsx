@@ -1,4 +1,4 @@
-// components/FinancialAnalysisClient.tsx
+// components/FinancialAnalysisClient.tsx - KG ONLY VERSION with simplified costs
 "use client";
 
 import { useState, useEffect } from "react";
@@ -7,8 +7,6 @@ import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft,
   DollarSign,
-  TrendingUp,
-  TrendingDown,
   Package,
   Sprout,
   Loader2,
@@ -18,18 +16,12 @@ import {
   Leaf,
   Tractor,
   Truck,
-  BaggageClaim,
-  Droplets,
-  Beaker,
-  FlaskConical,
-  Award,
-  Gem,
   Rocket,
   Zap,
-  TrendingUp as TrendingUpIcon
+  PlusCircle
 } from "lucide-react";
 import { useCurrency } from '@/lib/context/CurrencyContext';
-import { formatCurrencyForDisplay, formatCurrencyForSpeech } from '@/lib/utils/currency';
+import { formatCurrencyForDisplay } from '@/lib/utils/currency';
 
 interface FinancialAnalysisClientProps {
   sessionData: any;
@@ -43,113 +35,72 @@ export default function FinancialAnalysisClient({
   const { t } = useTranslation();
   const { currency } = useCurrency();
   const [isLoading, setIsLoading] = useState(true);
-  const [grossMargin, setGrossMargin] = useState<any>(null);
   const [crop, setCrop] = useState<string>("");
-  const [sellingPrice, setSellingPrice] = useState<number>(0);
-  const [yield_bags, setYield] = useState<number>(0);
 
-  // Detailed cost breakdowns
+  // KG-based financial data
+  const [yieldKg, setYieldKg] = useState<number>(0);
+  const [pricePerKg, setPricePerKg] = useState<number>(0);
+  const [revenue, setRevenue] = useState<number>(0);
+  const [totalCosts, setTotalCosts] = useState<number>(0);
+  const [grossMargin, setGrossMargin] = useState<number>(0);
+
+  // Cost breakdowns
+  const [seedCost, setSeedCost] = useState<number>(0);
+  const [fertilizerCosts, setFertilizerCosts] = useState<number>(0);
+  const [labourCosts, setLabourCosts] = useState<number>(0);
+  const [transportCost, setTransportCost] = useState<number>(0);
+  const [packagingCost, setPackagingCost] = useState<number>(0);
+  const [miscellaneousCost, setMiscellaneousCost] = useState<number>(0);
+
   const [fertilizerDetails, setFertilizerDetails] = useState<any[]>([]);
   const [labourDetails, setLabourDetails] = useState<any[]>([]);
   const [seedDetails, setSeedDetails] = useState<any>({});
-  const [transportDetails, setTransportDetails] = useState<any>({});
-  const [bagDetails, setBagDetails] = useState<any>({});
-
-  // Soil test data for summary (we keep state but won't use it)
-  const [soilTest, setSoilTest] = useState<any>(null);
 
   useEffect(() => {
     if (sessionData) {
-      console.log("📊 FinancialAnalysisClient received data:", sessionData);
+      console.log("📊 FinancialAnalysisClient (KG version) received:", sessionData);
 
-      // Get selling price and yield
-      setSellingPrice(sessionData.pricePerUnit || 0);
-      setYield(sessionData.actualYield || sessionData.grossMarginAnalysis?.bags || 27);
+      const yieldData = sessionData.yieldData || {};
+      const gm = sessionData.grossMarginAnalysis || {};
 
-      // Get soil test data (still needed for cost calculations? If not, you can remove)
-      if (sessionData.soilTest) {
-        setSoilTest(sessionData.soilTest);
-      }
+      setYieldKg(yieldData.actualKg || gm.yieldKg || 0);
+      setPricePerKg(yieldData.pricePerKg || gm.pricePerKg || 0);
+      setRevenue(yieldData.revenue || gm.revenue || 0);
+      setTotalCosts(gm.totalCosts || 0);
+      setGrossMargin(gm.grossMargin || 0);
 
-      // Extract fertilizer details from fertilizer plan
-      if (sessionData.soilTest?.fertilizerPlan) {
-        const plan = sessionData.soilTest.fertilizerPlan;
-        const planting = plan.planting || [];
-        const topdressing = plan.topdressing || [];
+      setSeedCost(sessionData.seedCost || gm.seedCost || 0);
 
-        const fertilizerItems = [];
+      // ✅ UPDATED: Use new simplified cost fields
+      setTransportCost(sessionData.transportCostTotal || gm.transportCost || 0);
+      setPackagingCost(sessionData.packagingCostTotal || gm.packagingCost || 0);
+      setMiscellaneousCost(sessionData.miscellaneousCostTotal || gm.miscellaneousCost || 0);
 
-        // Process planting fertilizers (DAP)
-        planting.forEach((item: any) => {
-          if (item.brand?.includes('DAP')) {
-            const bags = Math.floor(item.amountKg / 50);
-            const extraKg = item.amountKg % 50;
-            const pricePer50kg = item.pricePer50kg;
-            const totalCost = (bags * pricePer50kg) + (extraKg * (pricePer50kg / 50));
+      const labour = sessionData.labourCosts || {};
+      const totalLabour = (labour.ploughing || 0) + (labour.planting || 0) +
+                          (labour.weeding || 0) + (labour.harvesting || 0);
+      setLabourCosts(totalLabour);
 
-            fertilizerItems.push({
-              name: t('fertilizer_dap'),
-              unitPrice: pricePer50kg,
-              quantity: bags + (extraKg / 50),
-              bags: bags,
-              extraKg: extraKg,
-              total: Math.round(totalCost)
-            });
-          }
-        });
+      const labourItems = [];
+      const labourTypes = [
+        { key: 'ploughing', nameKey: 'labour_ploughing', cost: labour.ploughing || 0 },
+        { key: 'planting', nameKey: 'labour_planting', cost: labour.planting || 0 },
+        { key: 'weeding', nameKey: 'labour_weeding', cost: labour.weeding || 0 },
+        { key: 'harvesting', nameKey: 'labour_harvesting', cost: labour.harvesting || 0 }
+      ];
 
-        // Process topdressing fertilizers (CAN, UREA, MOP)
-        topdressing.forEach((item: any) => {
-          const bags = Math.floor(item.amountKg / 50);
-          const extraKg = item.amountKg % 50;
-          const pricePer50kg = item.pricePer50kg;
-          const totalCost = (bags * pricePer50kg) + (extraKg * (pricePer50kg / 50));
-
-          let name = "";
-          if (item.brand?.includes('CAN')) name = t('fertilizer_can');
-          else if (item.brand?.includes('UREA')) name = t('fertilizer_urea');
-          else if (item.brand?.includes('MOP')) name = t('fertilizer_mop');
-          else if (item.brand?.includes('Thabiti')) name = t('fertilizer_thabiti');
-
-          fertilizerItems.push({
-            name: name,
-            unitPrice: pricePer50kg,
-            quantity: bags + (extraKg / 50),
-            bags: bags,
-            extraKg: extraKg,
-            total: Math.round(totalCost)
+      labourTypes.forEach(type => {
+        if (type.cost > 0) {
+          labourItems.push({
+            name: t(type.nameKey),
+            unitPrice: type.cost,
+            quantity: 1,
+            total: type.cost
           });
-        });
+        }
+      });
+      setLabourDetails(labourItems);
 
-        setFertilizerDetails(fertilizerItems);
-      }
-
-      // Labour details
-      if (sessionData.labourCosts) {
-        const labourItems = [];
-        const labourTypes = [
-          { key: 'ploughing', nameKey: 'labour_ploughing' },
-          { key: 'planting', nameKey: 'labour_planting' },
-          { key: 'weeding', nameKey: 'labour_weeding' },
-          { key: 'harvesting', nameKey: 'labour_harvesting' }
-        ];
-
-        labourTypes.forEach(type => {
-          const cost = sessionData.labourCosts[type.key] || 0;
-          if (cost > 0) {
-            labourItems.push({
-              name: t(type.nameKey),
-              unitPrice: cost,
-              quantity: 1,
-              total: cost
-            });
-          }
-        });
-
-        setLabourDetails(labourItems);
-      }
-
-      // Seed details
       if (sessionData.seedRate && sessionData.seedCost) {
         setSeedDetails({
           name: t('seed_name'),
@@ -159,103 +110,10 @@ export default function FinancialAnalysisClient({
         });
       }
 
-      // Transport details
-      if (sessionData.transportCostPerBag && sessionData.grossMarginAnalysis?.bags) {
-        const bags = sessionData.grossMarginAnalysis.bags || 27;
-        setTransportDetails({
-          name: t('transport_name'),
-          unitPrice: sessionData.transportCostPerBag,
-          quantity: bags,
-          total: bags * sessionData.transportCostPerBag
-        });
-      }
-
-      // Bag details
-      if (sessionData.bagCost && sessionData.grossMarginAnalysis?.bags) {
-        const bags = sessionData.grossMarginAnalysis.bags || 27;
-        setBagDetails({
-          name: t('bags_name'),
-          unitPrice: sessionData.bagCost,
-          quantity: bags,
-          total: bags * sessionData.bagCost
-        });
-      }
-
-      // Handle gross margin data
-      if (sessionData.grossMarginAnalysis) {
-        const gm = sessionData.grossMarginAnalysis;
-
-        if (gm.low && gm.medium && gm.high) {
-          setGrossMargin(gm);
-        } else {
-          setGrossMargin({
-            low: {
-              bags: gm.bags || 0,
-              revenue: gm.revenue || 0,
-              seedCost: gm.seedCost || 0,
-              fertilizerCost: gm.fertilizerCost || 0,
-              labourCost: gm.labourCost || 0,
-              transportCost: gm.transportCost || 0,
-              bagCost: gm.bagCost || 0,
-              totalCost: gm.totalCosts || 0,
-              grossMargin: gm.grossMargin || 0,
-              pricePerBag: gm.pricePerBag || 0
-            },
-            medium: {
-              bags: gm.bags || 0,
-              revenue: gm.revenue || 0,
-              seedCost: gm.seedCost || 0,
-              fertilizerCost: gm.fertilizerCost || 0,
-              labourCost: gm.labourCost || 0,
-              transportCost: gm.transportCost || 0,
-              bagCost: gm.bagCost || 0,
-              totalCost: gm.totalCosts || 0,
-              grossMargin: gm.grossMargin || 0,
-              pricePerBag: gm.pricePerBag || 0
-            },
-            high: {
-              bags: gm.bags || 0,
-              revenue: gm.revenue || 0,
-              seedCost: gm.seedCost || 0,
-              fertilizerCost: gm.fertilizerCost || 0,
-              labourCost: gm.labourCost || 0,
-              transportCost: gm.transportCost || 0,
-              bagCost: gm.bagCost || 0,
-              totalCost: gm.totalCosts || 0,
-              grossMargin: gm.grossMargin || 0,
-              pricePerBag: gm.pricePerBag || 0
-            }
-          });
-        }
-      } else {
-        setGrossMargin({
-          low: { bags: 0, revenue: 0, seedCost: 0, fertilizerCost: 0, labourCost: 0, transportCost: 0, bagCost: 0, totalCost: 0, grossMargin: 0, pricePerBag: 0 },
-          medium: { bags: 0, revenue: 0, seedCost: 0, fertilizerCost: 0, labourCost: 0, transportCost: 0, bagCost: 0, totalCost: 0, grossMargin: 0, pricePerBag: 0 },
-          high: { bags: 0, revenue: 0, seedCost: 0, fertilizerCost: 0, labourCost: 0, transportCost: 0, bagCost: 0, totalCost: 0, grossMargin: 0, pricePerBag: 0 }
-        });
-      }
-
       setCrop(sessionData.crops?.[0] || t('crops'));
       setIsLoading(false);
     }
   }, [sessionData, t]);
-
-  // Format percentage
-  const formatPercentage = (value: number) => {
-    return `${(value || 0).toFixed(1)}%`;
-  };
-
-  // Helper function to get rating color (still used? If you remove soil test, you may not need it)
-  const getRatingColor = (rating: string) => {
-    switch(rating?.toLowerCase()) {
-      case 'very low': return 'text-red-600 bg-red-100';
-      case 'low': return 'text-orange-600 bg-orange-100';
-      case 'optimum': return 'text-green-600 bg-green-100';
-      case 'high': return 'text-blue-600 bg-blue-100';
-      case 'very high': return 'text-purple-600 bg-purple-100';
-      default: return 'text-gray-600 bg-gray-100';
-    }
-  };
 
   if (isLoading) {
     return (
@@ -265,20 +123,8 @@ export default function FinancialAnalysisClient({
     );
   }
 
-  const gm = grossMargin?.low || {
-    bags: 0,
-    revenue: 0,
-    seedCost: 0,
-    fertilizerCost: 0,
-    labourCost: 0,
-    transportCost: 0,
-    bagCost: 0,
-    totalCost: 0,
-    grossMargin: 0,
-    pricePerBag: 0
-  };
-
   const farmerName = sessionData?.farmerName || t('farmer');
+  const marginPercentage = revenue > 0 ? (grossMargin / revenue) * 100 : 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900">
@@ -296,22 +142,22 @@ export default function FinancialAnalysisClient({
               <div>
                 <h1 className="text-2xl font-bold flex items-center gap-2">
                   <DollarSign className="w-6 h-6" />
-                  {t('financial_analysis_title', { crop })}
+                  Financial Analysis - {crop} Enterprise
                 </h1>
                 <p className="text-white/80 flex items-center gap-2">
                   <Sprout className="w-4 h-4" />
-                  {t('financial_analysis_subtitle', { crop, county: sessionData?.county || t('unknown_location'), farmerName })}
+                  {crop} • {sessionData?.county || 'Unknown'} • {farmerName}'s Farm
                 </p>
               </div>
             </div>
             <div className="flex gap-2">
               <button className="px-4 py-2 bg-white/10 backdrop-blur-sm hover:bg-white/20 rounded-xl flex items-center gap-2 transition-all">
                 <Download className="w-4 h-4" />
-                {t('download')}
+                Download
               </button>
               <button className="px-4 py-2 bg-white/10 backdrop-blur-sm hover:bg-white/20 rounded-xl flex items-center gap-2 transition-all">
                 <Share2 className="w-4 h-4" />
-                {t('share')}
+                Share
               </button>
             </div>
           </div>
@@ -320,89 +166,54 @@ export default function FinancialAnalysisClient({
 
       {/* Main Content */}
       <div className="container mx-auto px-4 py-8">
-        {/* SOIL TEST SUMMARY SECTION – REMOVED */}
 
-        {/* Revenue Card with Selling Price */}
+        {/* Revenue Card - KG BASED */}
         <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl p-6 text-white shadow-xl mb-8">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
             <DollarSign className="w-6 h-6" />
-            {t('revenue_summary_title', { farmerName, crop })}
+            Revenue Summary - {farmerName}'s {crop} Enterprise
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <p className="text-sm opacity-90">{t('selling_price_per_bag')}</p>
-              <p className="text-3xl font-bold">{formatCurrencyForDisplay(sellingPrice, currency)}</p>
+              <p className="text-sm opacity-90">Selling Price per kg</p>
+              <p className="text-3xl font-bold">{formatCurrencyForDisplay(pricePerKg, currency)}</p>
             </div>
             <div>
-              <p className="text-sm opacity-90">{t('total_yield')}</p>
-              <p className="text-3xl font-bold">{yield_bags} {t('bags')}</p>
+              <p className="text-sm opacity-90">Total Yield</p>
+              <p className="text-3xl font-bold">{yieldKg.toLocaleString()} kg</p>
             </div>
             <div>
-              <p className="text-sm opacity-90">{t('total_revenue')}</p>
-              <p className="text-3xl font-bold">{formatCurrencyForDisplay(sellingPrice * yield_bags, currency)}</p>
+              <p className="text-sm opacity-90">Total Revenue</p>
+              <p className="text-3xl font-bold">{formatCurrencyForDisplay(revenue, currency)}</p>
             </div>
           </div>
           <p className="mt-3 text-white/80 text-sm">
-            {t('revenue_message', { farmerName })}
+            💼 This is your revenue, {farmerName}. Every kilogram sold puts money in YOUR pocket!
           </p>
         </div>
 
-        {/* Detailed Cost Breakdown with Unit Prices */}
+        {/* Detailed Cost Breakdown */}
         <div className="bg-white rounded-2xl p-6 shadow-xl mb-8">
           <h2 className="text-xl font-bold mb-6 text-blue-900 flex items-center gap-2">
             <BarChart3 className="w-5 h-5" />
-            {t('detailed_cost_breakdown_title')}
+            Detailed Cost Breakdown - Track Every Shilling!
           </h2>
 
-          {/* Fertilizer Costs */}
-          {fertilizerDetails.length > 0 && (
-            <div className="mb-6">
-              <h3 className="font-bold text-blue-900 mb-3 text-lg flex items-center gap-2">
-                <Package className="w-5 h-5" />
-                {t('fertilizer_costs_title')}
-              </h3>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-blue-100">
-                    <tr>
-                      <th className="p-2 text-left text-blue-800">{t('item')}</th>
-                      <th className="p-2 text-right text-blue-800">{t('unit_price_50kg')}</th>
-                      <th className="p-2 text-right text-blue-800">{t('quantity_50kg_bags')}</th>
-                      <th className="p-2 text-right text-blue-800">{t('total')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {fertilizerDetails.map((item, index) => (
-                      <tr key={index} className="border-b">
-                        <td className="p-2 font-medium text-blue-800">{item.name}</td>
-                        <td className="p-2 text-right text-blue-800">{formatCurrencyForDisplay(item.unitPrice, currency)}</td>
-                        <td className="p-2 text-right text-blue-800">
-                          {item.bags} {item.extraKg > 0 ? `+ ${item.extraKg}kg` : ''}
-                        </td>
-                        <td className="p-2 text-right font-bold text-blue-800">{formatCurrencyForDisplay(item.total, currency)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Labour Costs */}
+          {/* Labour Costs Table */}
           {labourDetails.length > 0 && (
             <div className="mb-6">
               <h3 className="font-bold text-green-900 mb-3 text-lg flex items-center gap-2">
                 <Tractor className="w-5 h-5" />
-                {t('labour_costs_title')}
+                👨‍🌾 Labour Costs
               </h3>
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-green-100">
                     <tr>
-                      <th className="p-2 text-left text-green-800">{t('item')}</th>
-                      <th className="p-2 text-right text-green-800">{t('rate_per_acre')}</th>
-                      <th className="p-2 text-right text-green-800">{t('quantity_acres')}</th>
-                      <th className="p-2 text-right text-green-800">{t('total')}</th>
+                      <th className="p-2 text-left text-green-800">Item</th>
+                      <th className="p-2 text-right text-green-800">Rate per Acre</th>
+                      <th className="p-2 text-right text-green-800">Quantity (acres)</th>
+                      <th className="p-2 text-right text-green-800">Total</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -425,20 +236,20 @@ export default function FinancialAnalysisClient({
             <div className="mb-6">
               <h3 className="font-bold text-purple-900 mb-3 text-lg flex items-center gap-2">
                 <Sprout className="w-5 h-5" />
-                {t('seed_costs_title')}
+                🌽 Seed Costs
               </h3>
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-purple-100">
                     <tr>
-                      <th className="p-2 text-left text-purple-800">{t('item')}</th>
-                      <th className="p-2 text-right text-purple-800">{t('price_per_kg')}</th>
-                      <th className="p-2 text-right text-purple-800">{t('quantity_kg')}</th>
-                      <th className="p-2 text-right text-purple-800">{t('total')}</th>
+                      <th className="p-2 text-left text-purple-800">Item</th>
+                      <th className="p-2 text-right text-purple-800">Price per kg</th>
+                      <th className="p-2 text-right text-purple-800">Quantity (kg)</th>
+                      <th className="p-2 text-right text-purple-800">Total</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr>
+                    <tr className="border-b">
                       <td className="p-2 font-medium text-purple-800">{seedDetails.name}</td>
                       <td className="p-2 text-right text-purple-800">{formatCurrencyForDisplay(seedDetails.unitPrice, currency)}</td>
                       <td className="p-2 text-right text-purple-800">{seedDetails.quantity}</td>
@@ -450,134 +261,69 @@ export default function FinancialAnalysisClient({
             </div>
           )}
 
-          {/* Transport & Bags */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            {transportDetails.total > 0 && (
-              <div>
-                <h3 className="font-bold text-amber-900 mb-3 text-lg flex items-center gap-2">
-                  <Truck className="w-5 h-5" />
-                  {t('transport_title')}
-                </h3>
-                <table className="w-full">
-                  <thead className="bg-amber-100">
-                    <tr>
-                      <th className="p-2 text-left text-amber-800">{t('item')}</th>
-                      <th className="p-2 text-right text-amber-800">{t('per_bag')}</th>
-                      <th className="p-2 text-right text-amber-800">{t('bags')}</th>
-                      <th className="p-2 text-right text-amber-800">{t('total')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td className="p-2 font-medium text-amber-800">{t('transport_name')}</td>
-                      <td className="p-2 text-right text-amber-800">{formatCurrencyForDisplay(transportDetails.unitPrice, currency)}</td>
-                      <td className="p-2 text-right text-amber-800">{transportDetails.quantity}</td>
-                      <td className="p-2 text-right font-bold text-amber-800">{formatCurrencyForDisplay(transportDetails.total, currency)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {bagDetails.total > 0 && (
-              <div>
-                <h3 className="font-bold text-amber-900 mb-3 text-lg flex items-center gap-2">
-                  <Package className="w-5 h-5" />
-                  {t('bags_title')}
-                </h3>
-                <table className="w-full">
-                  <thead className="bg-amber-100">
-                    <tr>
-                      <th className="p-2 text-left text-amber-800">{t('item')}</th>
-                      <th className="p-2 text-right text-amber-800">{t('per_bag')}</th>
-                      <th className="p-2 text-right text-amber-800">{t('bags')}</th>
-                      <th className="p-2 text-right text-amber-800">{t('total')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td className="p-2 font-medium text-amber-800">{t('bags_name')}</td>
-                      <td className="p-2 text-right text-amber-800">{formatCurrencyForDisplay(bagDetails.unitPrice, currency)}</td>
-                      <td className="p-2 text-right text-amber-800">{bagDetails.quantity}</td>
-                      <td className="p-2 text-right font-bold text-amber-800">{formatCurrencyForDisplay(bagDetails.total, currency)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
           {/* Grand Total Table */}
           <div className="mt-8 overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="bg-blue-900 text-white">
-                  <th className="p-3 text-left rounded-tl-xl">{t('cost_item')}</th>
-                  <th className="p-3 text-right">{t('details')}</th>
-                  <th className="p-3 text-right rounded-tr-xl">{t('amount')}</th>
+                  <th className="p-3 text-left rounded-tl-xl">Cost Item</th>
+                  <th className="p-3 text-right">Details</th>
+                  <th className="p-3 text-right rounded-tr-xl">Amount</th>
                 </tr>
               </thead>
               <tbody>
                 <tr className="border-b border-blue-100">
-                  <td className="p-3 font-medium text-blue-800">{t('revenue')}</td>
-                  <td className="p-3 text-right text-blue-800">{yield_bags} {t('bags')} × {formatCurrencyForDisplay(sellingPrice, currency)}</td>
-                  <td className="p-3 text-right font-bold text-green-600">{formatCurrencyForDisplay(sellingPrice * yield_bags, currency)}</td>
+                  <td className="p-3 font-medium text-blue-800">Revenue</td>
+                  <td className="p-3 text-right text-blue-800">{yieldKg.toLocaleString()} kg × {formatCurrencyForDisplay(pricePerKg, currency)}</td>
+                  <td className="p-3 text-right font-bold text-green-600">{formatCurrencyForDisplay(revenue, currency)}</td>
                 </tr>
                 <tr className="border-b border-blue-100 bg-blue-50">
-                  <td className="p-3 font-medium text-blue-800">{t('seed_cost')}</td>
-                  <td className="p-3 text-right text-blue-800">{seedDetails.quantity} kg × {formatCurrencyForDisplay(seedDetails.unitPrice, currency)}</td>
-                  <td className="p-3 text-right font-bold text-blue-800">{formatCurrencyForDisplay(seedDetails.total, currency)}</td>
+                  <td className="p-3 font-medium text-blue-800">Seed Cost</td>
+                  <td className="p-3 text-right text-blue-800">{seedDetails.quantity || 0} kg × {formatCurrencyForDisplay(seedDetails.unitPrice || 0, currency)}</td>
+                  <td className="p-3 text-right font-bold text-blue-800">{formatCurrencyForDisplay(seedCost, currency)}</td>
                 </tr>
-                {fertilizerDetails.map((item, index) => (
-                  <tr key={`fert-${index}`} className="border-b border-blue-100">
-                    <td className="p-3 font-medium text-blue-800">{item.name}</td>
-                    <td className="p-3 text-right text-blue-800">
-                      {item.bags} {t('bags')} × {formatCurrencyForDisplay(item.unitPrice, currency)}
-                      {item.extraKg > 0 ? ` + ${item.extraKg}kg × ${formatCurrencyForDisplay(item.unitPrice/50, currency)}` : ''}
-                    </td>
-                    <td className="p-3 text-right font-bold text-blue-800">{formatCurrencyForDisplay(item.total, currency)}</td>
-                  </tr>
-                ))}
                 {labourDetails.map((item, index) => (
-                  <tr key={`labour-${index}`} className="border-b border-blue-100 bg-blue-50">
+                  <tr key={`labour-${index}`} className="border-b border-blue-100">
                     <td className="p-3 font-medium text-blue-800">{item.name}</td>
-                    <td className="p-3 text-right text-blue-800">1 {t('acre')} × {formatCurrencyForDisplay(item.unitPrice, currency)}</td>
+                    <td className="p-3 text-right text-blue-800">1 acre × {formatCurrencyForDisplay(item.unitPrice, currency)}</td>
                     <td className="p-3 text-right font-bold text-blue-800">{formatCurrencyForDisplay(item.total, currency)}</td>
                   </tr>
                 ))}
+                <tr className="border-b border-blue-100 bg-blue-50">
+                  <td className="p-3 font-medium text-blue-800">Transport</td>
+                  <td className="p-3 text-right text-blue-800">Total transport cost</td>
+                  <td className="p-3 text-right font-bold text-blue-800">{formatCurrencyForDisplay(transportCost, currency)}</td>
+                </tr>
                 <tr className="border-b border-blue-100">
-                  <td className="p-3 font-medium text-blue-800">{t('transport')}</td>
-                  <td className="p-3 text-right text-blue-800">{transportDetails.quantity} {t('bags')} × {formatCurrencyForDisplay(transportDetails.unitPrice, currency)}</td>
-                  <td className="p-3 text-right font-bold text-blue-800">{formatCurrencyForDisplay(transportDetails.total, currency)}</td>
+                  <td className="p-3 font-medium text-blue-800">Packaging</td>
+                  <td className="p-3 text-right text-blue-800">Total packaging cost (bags, crates, boxes)</td>
+                  <td className="p-3 text-right font-bold text-blue-800">{formatCurrencyForDisplay(packagingCost, currency)}</td>
                 </tr>
                 <tr className="border-b border-blue-100 bg-blue-50">
-                  <td className="p-3 font-medium text-blue-800">{t('bags')}</td>
-                  <td className="p-3 text-right text-blue-800">{bagDetails.quantity} {t('bags')} × {formatCurrencyForDisplay(bagDetails.unitPrice, currency)}</td>
-                  <td className="p-3 text-right font-bold text-blue-800">{formatCurrencyForDisplay(bagDetails.total, currency)}</td>
+                  <td className="p-3 font-medium text-blue-800">Miscellaneous</td>
+                  <td className="p-3 text-right text-blue-800">Other costs (storage, marketing, certification)</td>
+                  <td className="p-3 text-right font-bold text-blue-800">{formatCurrencyForDisplay(miscellaneousCost, currency)}</td>
                 </tr>
                 <tr className="bg-blue-900 text-white font-bold">
-                  <td className="p-3 rounded-bl-xl">{t('total_costs')}</td>
+                  <td className="p-3 rounded-bl-xl">TOTAL COSTS</td>
                   <td className="p-3 text-right"></td>
-                  <td className="p-3 text-right rounded-br-xl">{formatCurrencyForDisplay(gm.totalCost, currency)}</td>
+                  <td className="p-3 text-right rounded-br-xl">{formatCurrencyForDisplay(totalCosts, currency)}</td>
                 </tr>
-                <tr className="bg-green-600 text-white font-bold">
-                  <td className="p-3 rounded-bl-xl">{t('gross_margin_profit')}</td>
+                <tr className={`font-bold ${grossMargin >= 0 ? 'bg-green-600' : 'bg-red-600'} text-white`}>
+                  <td className="p-3 rounded-bl-xl">GROSS MARGIN (PROFIT)</td>
                   <td className="p-3 text-right"></td>
-                  <td className="p-3 text-right rounded-br-xl">{formatCurrencyForDisplay(gm.grossMargin, currency)}</td>
+                  <td className="p-3 text-right rounded-br-xl">{formatCurrencyForDisplay(grossMargin, currency)}</td>
                 </tr>
               </tbody>
             </table>
 
-            {/* Business Message */}
-            <div className="mt-4 p-4 bg-green-50 rounded-lg border-2 border-green-300">
-              <p className="text-green-800 font-medium flex items-center gap-2">
+            {/* Business Summary */}
+            <div className={`mt-4 p-4 rounded-lg border-2 ${grossMargin >= 0 ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'}`}>
+              <p className={`font-medium flex items-center gap-2 ${grossMargin >= 0 ? 'text-green-800' : 'text-red-800'}`}>
                 <Rocket className="w-5 h-5" />
-                {t('business_summary', {
-                  farmerName: farmerName.toUpperCase(),
-                  totalCost: formatCurrencyForDisplay(gm.totalCost, currency),
-                  profit: formatCurrencyForDisplay(gm.grossMargin, currency),
-                  roi: (gm.grossMargin / gm.totalCost * 100).toFixed(1)
-                })}
+                💼 BUSINESS SUMMARY, {farmerName.toUpperCase()}: Your total investment is {formatCurrencyForDisplay(totalCosts, currency)}.
+                Your profit is {formatCurrencyForDisplay(grossMargin, currency)}.
+                That's {marginPercentage.toFixed(1)}% return on your investment!
               </p>
             </div>
           </div>
@@ -587,24 +333,24 @@ export default function FinancialAnalysisClient({
         <div className="bg-white rounded-2xl p-6 shadow-xl">
           <h3 className="text-lg font-bold mb-4 text-blue-900 flex items-center gap-2">
             <Leaf className="w-5 h-5" />
-            {t('farm_details_title', { farmerName })}
+            Farm Details - {farmerName}'s Enterprise
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="p-3 bg-blue-50 rounded-lg">
-              <p className="text-xs text-blue-600">{t('crop_enterprise')}</p>
+              <p className="text-xs text-blue-600">Crop Enterprise</p>
               <p className="font-bold text-blue-900 capitalize">{crop}</p>
             </div>
             <div className="p-3 bg-blue-50 rounded-lg">
-              <p className="text-xs text-blue-600">{t('county')}</p>
-              <p className="font-bold text-blue-900">{sessionData?.county || t('unknown')}</p>
+              <p className="text-xs text-blue-600">County</p>
+              <p className="font-bold text-blue-900">{sessionData?.county || 'Unknown'}</p>
             </div>
             <div className="p-3 bg-blue-50 rounded-lg">
-              <p className="text-xs text-blue-600">{t('farm_size')}</p>
-              <p className="font-bold text-blue-900">{sessionData?.cultivatedAcres || 1} {t('acres')}</p>
+              <p className="text-xs text-blue-600">Farm Size</p>
+              <p className="font-bold text-blue-900">{sessionData?.cropAcres || 1} acres</p>
             </div>
             <div className="p-3 bg-blue-50 rounded-lg">
-              <p className="text-xs text-blue-600">{t('soil_test')}</p>
-              <p className="font-bold text-blue-900">{sessionData?.soilTest ? t('yes') : t('no')}</p>
+              <p className="text-xs text-blue-600">Soil Test</p>
+              <p className="font-bold text-blue-900">{sessionData?.soilTest ? 'Yes' : 'No'}</p>
             </div>
           </div>
 
@@ -612,27 +358,19 @@ export default function FinancialAnalysisClient({
           <div className="mt-4 p-3 bg-yellow-50 rounded-lg border border-yellow-300">
             <p className="text-yellow-800 text-sm flex items-center gap-2">
               <Zap className="w-4 h-4" />
-              {t('business_reminder', { farmerName: farmerName.toUpperCase() })}
+              🔥 REMEMBER {farmerName.toUpperCase()}: Produce more with less. Every shilling you save is profit in YOUR pocket!
             </p>
           </div>
         </div>
 
-        {/* Navigation with Compare Crops by Profit Button */}
-        <div className="mt-8 flex justify-between">
+        {/* Navigation */}
+        <div className="mt-8">
           <Link
             href={`/interview/${sessionId}`}
-            className="px-6 py-3 bg-white/10 text-white rounded-xl font-medium hover:bg-white/20 transition-all flex items-center gap-2 border border-white/30"
+            className="inline-flex px-6 py-3 bg-white/10 text-white rounded-xl font-medium hover:bg-white/20 transition-all items-center gap-2 border border-white/30"
           >
             <ArrowLeft className="w-5 h-5" />
-            {t('back_to_recommendations')}
-          </Link>
-
-          <Link
-            href={`/compare/${sessionId}`}
-            className="px-8 py-3 bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-xl font-bold hover:from-purple-600 hover:to-pink-700 transition-all flex items-center gap-3 shadow-lg"
-          >
-            <BarChart3 className="w-5 h-5" />
-            {t('compare_crops_by_profit')}
+            Back to Recommendations
           </Link>
         </div>
       </div>

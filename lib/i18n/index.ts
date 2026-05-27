@@ -7,11 +7,19 @@ export const initI18next = async (lng: string) => {
   // DEBUG: Log the incoming language
   console.log(`🔍 initI18next called with lng: "${lng}" (type: ${typeof lng}, length: ${lng?.length})`);
 
-  // Validate lng - ensure it's a 2-letter code
+  // Validate lng - allow 2-letter OR 5-letter codes
   let validLng = lng;
-  if (!lng || typeof lng !== 'string' || lng.length !== 2) {
-    console.error(`❌ Invalid language code detected: "${lng}", falling back to 'en'`);
-    validLng = 'en';
+  const isValidLength = lng && typeof lng === 'string' && (lng.length === 2 || lng.length === 5);
+
+  if (!isValidLength) {
+    console.error(`❌ Invalid language code detected: "${lng}", falling back to 'en-US'`);
+    validLng = 'en-US';
+  }
+
+  // Check for the mysterious 'V' bug
+  if (validLng === 'V') {
+    console.error(`🔥 Found the mysterious 'V' language! This should not happen.`);
+    validLng = 'en-US';
   }
 
   const i18nInstance = createInstance();
@@ -21,39 +29,18 @@ export const initI18next = async (lng: string) => {
       // DEBUG: Log each language being loaded
       console.log(`📚 Loading locale: "${language}/${namespace}.json"`);
 
-      // Validate language before import
-      let safeLanguage = language;
-      if (!language || typeof language !== 'string' || language.length !== 2) {
-        console.error(`❌ Invalid language in resourcesToBackend: "${language}", falling back to 'en'`);
-        safeLanguage = 'en';
-      }
-
-      // Check if it's the mysterious 'V'
-      if (safeLanguage === 'V') {
-        console.error(`🔥 Found the mysterious 'V' language! This should not happen.`);
-        safeLanguage = 'en';
-      }
-
-      // First try: requested language with requested namespace
-      return import(`@/public/locales/${safeLanguage}/${namespace}.json`) // ✅ Updated path
+      // Support folder names like 'en-US', 'en-GB', etc.
+      return import(`@/public/locales/${language}/${namespace}.json`)
         .catch(() => {
-          // Second try: requested language with 'common' namespace (your actual files)
-          return import(`@/public/locales/${safeLanguage}/common.json`) // ✅ Updated path
-            .catch(() => {
-              // Final fallback: English with 'common' namespace
-              console.log(`⚠️ Falling back to en/common.json for ${safeLanguage}/${namespace}`);
-              return import(`@/public/locales/en/common.json`); // ✅ Updated path
-            });
+          // Fallback to US English
+          console.log(`⚠️ Falling back to en-US/common.json for ${language}/${namespace}`);
+          return import(`@/public/locales/en-US/common.json`);
         });
     }))
     .init({
       lng: validLng,
-      fallbackLng: 'en',
-      supportedLngs: [
-        'en', 'fr', 'es', 'sw', 'hi', 'zh', 'ar',
-        'pt', 'ru', 'de', 'it', 'nl', 'el',
-        'th', 'vi', 'id', 'am', 'bn'
-      ],
+      fallbackLng: 'en-US',
+      supportedLngs: ['en-US', 'en-GB', 'fr', 'es', 'sw'],
       defaultNS: 'common',
       fallbackNS: 'common',
       interpolation: {

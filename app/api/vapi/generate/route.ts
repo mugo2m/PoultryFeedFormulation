@@ -7,68 +7,127 @@ import { fertilizerCalculator } from "@/lib/fertilizerCalculator";
 import { generateRecommendations } from "@/lib/recommendationEngine";
 import { calculateGrossMarginFromFarmerData, convertToKg, validateYield, validatePrice } from "@/lib/utils";
 import { getSpacingOptions } from "@/lib/data/spacing";
-import { getPlantingFertilizersByCrop } from "@/lib/fertilizers/plantingFertilizers";
-import { getTopDressingFertilizersByCrop } from "@/lib/fertilizers/topDressingFertilizers";
 import { getPlantingAdvice, getPlantingAdviceText } from "@/lib/data/plantingDates";
+import { COUNTRY_CURRENCY_MAP } from "@/lib/config/currency";
 
 console.log("Farmer Session Generation Route Loaded");
 
-// ========== COMPREHENSIVE DEFAULT YIELDS (bags per acre for common units) ==========
-const defaultYieldsBags: Record<string, number> = {
-  // Cereals & grains
-  maize: 27, rice: 30, wheat: 25, barley: 25, sorghum: 20, millet: 18,
-  "finger millet": 18, teff: 15, triticale: 25, oats: 20, buckwheat: 15,
-  quinoa: 18, fonio: 12, spelt: 20, kamut: 20, "amaranth grain": 12,
-  // Pulses & legumes
-  beans: 12, cowpeas: 10, "green grams": 10, groundnuts: 15, "soya beans": 15,
-  pigeonpeas: 12, bambaranuts: 10, chickpea: 10, lentil: 10, "faba bean": 12,
-  peanut: 15,
-  // Root & tuber crops (bags of 50kg)
-  cassava: 120, "sweet potatoes": 100, "irish potatoes": 100, yams: 80, taro: 80,
-  ginger: 60, turmeric: 50, horseradish: 40, parsnip: 60, turnip: 60, rutabaga: 60,
-  // Vegetables (90kg bags for heavy vegetables, 50kg for leafy)
-  tomatoes: 150, onions: 80, carrots: 100, cabbages: 100, kales: 80,
-  capsicums: 80, chillies: 60, brinjals: 80, "french beans": 50, "garden peas": 40,
-  spinach: 80, okra: 70, lettuce: 80, broccoli: 60, cauliflower: 60,
-  celery: 80, leeks: 80, beetroot: 80, radish: 80, pumpkin: 100,
-  courgettes: 80, cucumbers: 100, "pumpkin leaves": 80, "sweet potato leaves": 80,
-  "ethiopian kale": 80, "jute mallow": 60, "spider plant": 60, "african nightshade": 50,
-  amaranth: 40, arugula: 50, asparagus: 30, artichoke: 50, rhubarb: 80,
-  wasabi: 50, "bok choy": 80, "collard greens": 80, "mustard greens": 60,
-  "swiss chard": 80, radicchio: 60, escarole: 60, frisee: 60, "turnip greens": 60,
-  // Fruits (90kg bags)
-  bananas: 60, mangoes: 80, avocados: 20, oranges: 100, pineapples: 200,
-  watermelons: 150, pawpaws: 100, "passion fruit": 80, grapefruit: 100, lemons: 100,
-  limes: 80, guava: 80, jackfruit: 50, breadfruit: 50, pomegranate: 60,
-  "star fruit": 80, coconut: 30, cashew: 20, macadamia: 40, fig: 60,
-  "date palm": 50, mulberry: 40, lychee: 50, persimmon: 60, gooseberry: 40,
-  currant: 30, elderberry: 30, rambutan: 50, durian: 80, mangosteen: 40,
-  longan: 50, marula: 40,
-  // Cash crops (90kg bags for coffee/tea, etc.)
-  coffee: 20, tea: 25, cocoa: 8, cotton: 20, sunflower: 15, simsim: 8,
-  sugarcane: 400, tobacco: 20, sisal: 50, pyrethrum: 10, "oil palm": 80,
-  rubber: 5,
-  // Herbs & spices (50kg bags)
-  vanilla: 8, "black pepper": 15, cardamom: 10, cinnamon: 15, cloves: 8,
-  coriander: 10, basil: 20, mint: 20, rosemary: 20, thyme: 20, oregano: 20,
-  sage: 20, dill: 10, fennel: 20, lavender: 10, chamomile: 10, echinacea: 10,
-  ginseng: 8, goldenseal: 8, "stinging nettle": 50, moringa: 50, stevia: 10,
-  fenugreek: 8, cumin: 5, caraway: 5, anise: 5, lovage: 20, marjoram: 20,
-  tarragon: 20, sorrel: 20, chervil: 20, savory: 20, calendula: 10, nasturtium: 20,
-  borage: 20, "st. john's wort": 10, valerian: 10,
-  // Forage grasses (tons, not bags – we'll treat as 100kg bags for simplicity)
-  brachiaria: 100, "buffel grass": 60, "guinea grass": 80, "italian ryegrass": 80,
-  "napier grass": 200, "napier hybrid": 250, "orchard grass": 80, "rhodes grass": 80,
-  "timothy grass": 80, "forage sorghum": 150, leucaena: 80, calliandra: 80,
-  sesbania: 80, cenchrus: 60,
-  // Other
-  bamboo: 50, "aloe vera": 100, "oyster nut": 20, watercress: 50, ramie: 30,
-  flax: 10, hemp: 20, jute: 20, kenaf: 20, "slender leaf": 40
+// ========== CACHING IMPLEMENTATION ==========
+const cache = new Map();
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+function getCacheKey(inputs: any): string {
+  const {
+    userLanguage,
+    primaryCrop,
+    hasDoneSoilTest,
+    farmSize,
+    soilTestPH,
+    soilTestP,
+    soilTestK,
+    actualYieldKg,
+    pricePerKg,
+    totalCosts,
+    country,
+    plantsDamaged,
+    deficiencySymptoms,
+    deficiencyLocation,
+    spacing,
+    storageMethod,
+    wantsNutritionBenefits,
+  } = inputs;
+  return JSON.stringify({
+    lang: userLanguage,
+    crop: primaryCrop,
+    soilTest: hasDoneSoilTest,
+    size: farmSize,
+    ph: soilTestPH,
+    p: soilTestP,
+    k: soilTestK,
+    yield: actualYieldKg,
+    price: pricePerKg,
+    costs: totalCosts,
+    country,
+    damaged: plantsDamaged,
+    defSym: deficiencySymptoms,
+    defLoc: deficiencyLocation,
+    spacing,
+    storage: storageMethod,
+    wants: wantsNutritionBenefits,
+  });
+}
+
+// Helper to clean user input (remove garbage like "Underscore nutrition." or random proper names)
+function cleanUserInput(input: string | undefined): string | undefined {
+  if (!input) return input;
+  return input.split(',')
+    .map(item => item.trim())
+    .filter(item =>
+      item.length > 0 &&
+      !item.includes('_') &&
+      !item.toLowerCase().includes('underscore') &&
+      !/^[A-Z][a-z]+ [A-Z][a-z]+\.?$/.test(item) // removes random "Daniel Enterprises Profitability."-like phrases
+    )
+    .join(', ');
+}
+
+// Default yields in KG per acre
+const defaultYieldsKg: Record<string, number> = {
+  maize: 2700, rice: 2700, wheat: 2000, barley: 2000, sorghum: 1500, millet: 1200,
+  beans: 1200, cowpeas: 800, "green grams": 800, groundnuts: 1000, "soya beans": 1000,
+  tomatoes: 15000, onions: 8000, carrots: 10000, cabbages: 12000, kales: 8000,
+  brinjals: 10000, capsicums: 8000, chillies: 6000, "french beans": 5000,
+  bananas: 6000, mangoes: 8000, avocados: 2000, oranges: 10000, pineapples: 20000,
+  cassava: 8000, "sweet potatoes": 7000, "irish potatoes": 10000,
+  coffee: 2000, tea: 2500, sugarcane: 40000, sunflower: 1500,
+  asparagus: 3000, spinach: 8000, okra: 7000, lettuce: 8000,
+  ginger: 8000, turmeric: 6000, garlic: 5000,
+  watermelon: 15000, pawpaws: 10000, "passion fruit": 8000,
+  macadamia: 4000, cashew: 2000, coconut: 3000, cayenne: 8000,
 };
 
-function getCropDefaultYield(crop: string): number {
+function getCropDefaultYieldKg(crop: string): number {
   const key = crop.toLowerCase();
-  return defaultYieldsBags[key] || 20;
+  return defaultYieldsKg[key] || 2000;
+}
+
+function getDefaultPricePerKg(crop: string): number {
+  const defaultPrices: Record<string, number> = {
+    maize: 40, beans: 80, tomatoes: 40, onions: 50, cabbages: 25,
+    kales: 20, brinjals: 30, capsicums: 50, chillies: 80, carrots: 40,
+    bananas: 30, mangoes: 50, avocados: 40, oranges: 40, pineapples: 40,
+    cassava: 20, sweet_potatoes: 25, irish_potatoes: 30, coffee: 300,
+    tea: 200, sugarcane: 5, sunflower: 60, asparagus: 100, spinach: 25,
+    okra: 35, lettuce: 30, ginger: 80, turmeric: 100, garlic: 200,
+    watermelon: 30, pawpaws: 30, passion_fruit: 50, macadamia: 150,
+    cashew: 100, coconut: 20, rice: 60, wheat: 45, sorghum: 45,
+    millet: 50, groundnuts: 120, soya_beans: 60, cowpeas: 70,
+    green_grams: 70, pigeonpeas: 70, cayenne: 80
+  };
+  const key = crop.toLowerCase().replace(/ /g, '_');
+  return defaultPrices[key] || 40;
+}
+
+// ========== UPDATED CURRENCY FORMATTER USING SHARED MAP ==========
+function formatCurrencyForCountry(amount: number, country: string = 'kenya'): string {
+  const normalizedCountry = country.toLowerCase();
+  const currency = COUNTRY_CURRENCY_MAP[normalizedCountry] || COUNTRY_CURRENCY_MAP.kenya;
+  return new Intl.NumberFormat(currency.locale, {
+    style: 'currency',
+    currency: currency.code,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: currency.decimalPlaces
+  }).format(amount);
+}
+
+function getCurrencyForCountry(country: string = 'kenya'): { symbol: string; name: string; code: string } {
+  const normalized = country.toLowerCase();
+  const currency = COUNTRY_CURRENCY_MAP[normalized] || COUNTRY_CURRENCY_MAP.kenya;
+  return {
+    symbol: currency.symbol,
+    name: currency.name,
+    code: currency.code,
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -80,6 +139,7 @@ export async function POST(request: NextRequest) {
     const userLanguage = bodyLanguage || cookieLanguage || 'en';
     console.log(`🌐 Generating recommendations in language: ${userLanguage}`);
 
+    // Destructure all fields from frontend
     const {
       farmerName,
       phoneNumber,
@@ -104,18 +164,17 @@ export async function POST(request: NextRequest) {
       topdressingFertilizerQuantity,
       commonPests,
       commonDiseases,
-      actualYield,
-      yieldUnit,
+      actualYieldKg,
+      pricePerKg,
       storageMethod,
       ploughingCost,
       plantingLabourCost,
       weedingCost,
       harvestingCost,
-      transportCostPerKg,
-      emptyBags,
-      bagCost,
+      transportCostTotal,
+      packagingCostTotal,
+      miscellaneousCostTotal,
       hasDoneSoilTest,
-
       soilTestDate,
       soilTestPH,
       soilTestPHRating,
@@ -137,110 +196,76 @@ export async function POST(request: NextRequest) {
       soilTestOMRating,
       soilTestCEC,
       soilTestCECRating,
-
       targetYield,
       recCalciticLime,
-      recDolomiticLime,           // NEW
+      recDolomiticLime,
       recPlantingFertilizer,
       recPlantingQuantity,
       recTopdressingFertilizer,
       recTopdressingQuantity,
       recPotassiumFertilizer,
       recPotassiumQuantity,
-
       plantingFertilizerNutrients,
       topdressingFertilizerNutrients,
       potassiumFertilizerNutrients,
-
       plantingFertilizerToUse,
       plantingFertilizerCost,
       topdressingFertilizerToUse,
       topdressingFertilizerCost,
       potassiumFertilizerToUse,
       potassiumFertilizerCost,
-
       plantingFertilizerQuantity: plantingFertilizerQuantityKg,
       topdressingFertilizerQuantity: topdressingFertilizerQuantityKg,
       potassiumFertilizerQuantity: potassiumFertilizerQuantityKg,
-
       calciticLimePricePerBag,
-      dolomiticLimePricePerBag,   // NEW
+      dolomiticLimePricePerBag,
       plantsDamaged,
       seedCost,
-      pricePerUnit,
-      priceUnit,
       season,
       county,
       acres,
-      averageHarvest,
-      harvestUnit,
       conservationPractices,
       useCertifiedSeed,
       seedQuantity,
       userid,
       country,
-
       deficiencySymptoms,
       deficiencyLocation,
-
-      wantsNutritionBenefits,     // NEW
+      wantsNutritionBenefits,
     } = body;
 
+    // Clean user input fields that often contain garbage
+    const cleanedCommonPests = cleanUserInput(commonPests);
+    const cleanedCommonDiseases = cleanUserInput(commonDiseases);
+    const cleanedConservationPractices = cleanUserInput(conservationPractices);
+
     if (!crops || !county || !userid) {
+      console.error("Missing required fields:", { crops, county, userid });
       return NextResponse.json(
         { error: "Missing required fields: crops, county, userid are required" },
         { status: 400 }
       );
     }
 
+    // Get currency configuration for the selected country
+    const currencyConfig = getCurrencyForCountry(country);
+
     const cropsArray = crops.split(",").map((c: string) => c.trim());
     const primaryCrop = cropsArray[0];
     const farmSize = parseFloat(cropAcres) || parseFloat(acres) || 1;
 
-    // ========== PLANTING ADVICE ==========
+    // === Planting advice ===
     let plantingAdvice = null;
     let plantingAdviceText = null;
-
     if (plantingDate && primaryCrop && country) {
-      const advice = getPlantingAdvice(primaryCrop, country, county, plantingDate);
-      const adviceText = getPlantingAdviceText(primaryCrop, country, county, plantingDate);
-      plantingAdvice = advice;
-      plantingAdviceText = adviceText;
-      console.log(`🌱 Planting advice for ${primaryCrop} in ${country}/${county}: ${advice}`);
+      plantingAdvice = getPlantingAdvice(primaryCrop, country, county, plantingDate);
+      plantingAdviceText = getPlantingAdviceText(primaryCrop, country, county, plantingDate);
+      console.log(`🌱 Planting advice for ${primaryCrop} in ${country}/${county}: ${plantingAdvice}`);
     }
 
-    // ========== VALIDATE YIELD AND PRICE ==========
-    let validatedYield = parseFloat(actualYield) || parseFloat(averageHarvest) || 0;
-    let validatedPrice = parseFloat(pricePerUnit) || 0;
-    let yieldWarnings: string[] = [];
-    let priceWarnings: string[] = [];
-
-    if (validatedYield > 0 && primaryCrop) {
-      const yieldInKg = convertToKg(primaryCrop, validatedYield, yieldUnit || harvestUnit || "kg");
-      const yieldValidation = validateYield(primaryCrop, yieldInKg, farmSize);
-      if (!yieldValidation.valid && yieldValidation.message) {
-        yieldWarnings.push(yieldValidation.message);
-        if (yieldValidation.suggested) {
-          validatedYield = yieldValidation.suggested / farmSize;
-        }
-      }
-    }
-
-    if (validatedPrice > 0 && primaryCrop) {
-      const pricePerKg = convertToKg(primaryCrop, validatedPrice, priceUnit || "kg") / validatedPrice;
-      const priceValidation = validatePrice(primaryCrop, pricePerKg);
-      if (!priceValidation.valid && priceValidation.message) {
-        priceWarnings.push(priceValidation.message);
-        if (priceValidation.suggested) {
-          validatedPrice = priceValidation.suggested;
-        }
-      }
-    }
-
-    // ========== SPACING VALIDATION ==========
+    // === Spacing info ===
     let spacingInfo = null;
     let spacingWarning: string | null = null;
-
     if (spacing && primaryCrop) {
       const spacingOptions = getSpacingOptions(primaryCrop);
       const selectedSpacing = spacingOptions.find(s => s.label === spacing);
@@ -252,16 +277,66 @@ export async function POST(request: NextRequest) {
           label: selectedSpacing.label,
           plantsPerAcre: selectedSpacing.plantsPerAcre
         };
-
-        const { validatePlantPopulation } = await import('@/lib/utils');
-        const popValidation = validatePlantPopulation(primaryCrop, selectedSpacing.plantsPerAcre);
-        if (!popValidation.valid) {
-          spacingWarning = popValidation.message;
-        }
+        console.log(`📏 Spacing info: ${selectedSpacing.label} = ${selectedSpacing.plantsPerAcre.toLocaleString()} plants/acre`);
       }
     }
 
-    // ========== SOIL TEST ANALYSIS ==========
+    // === Validate yield and price ===
+    let validatedYieldKg = parseFloat(actualYieldKg) || 0;
+    let validatedPricePerKg = parseFloat(pricePerKg) || 0;
+    let yieldWarnings: string[] = [];
+    let priceWarnings: string[] = [];
+
+    if (validatedYieldKg === 0 && primaryCrop) {
+      validatedYieldKg = getCropDefaultYieldKg(primaryCrop) * farmSize;
+      yieldWarnings.push(`Using default yield of ${validatedYieldKg.toLocaleString()} kg for ${primaryCrop}`);
+    }
+    if (validatedPricePerKg === 0 && primaryCrop) {
+      validatedPricePerKg = getDefaultPricePerKg(primaryCrop);
+      priceWarnings.push(`Using default price of ${validatedPricePerKg} ${currencyConfig.symbol}/kg for ${primaryCrop}`);
+    }
+
+    // === Gross margin calculation (kg-based) ===
+    const revenue = validatedYieldKg * validatedPricePerKg;
+    const seedCostValue = parseFloat(seedCost) || 0;
+    const ploughingCostValue = parseFloat(ploughingCost) || 0;
+    const plantingLabourCostValue = parseFloat(plantingLabourCost) || 0;
+    const weedingCostValue = parseFloat(weedingCost) || 0;
+    const harvestingCostValue = parseFloat(harvestingCost) || 0;
+    const transportCostValue = parseFloat(transportCostTotal) || 0;
+    const packagingCostValue = parseFloat(packagingCostTotal) || 0;
+    const miscellaneousCostValue = parseFloat(miscellaneousCostTotal) || 0;
+
+    const totalCosts = seedCostValue + ploughingCostValue + plantingLabourCostValue +
+                       weedingCostValue + harvestingCostValue + transportCostValue +
+                       packagingCostValue + miscellaneousCostValue;
+
+    const grossMargin = revenue - totalCosts;
+    const marginPercentage = totalCosts > 0 ? (grossMargin / revenue) * 100 : 0;
+
+    const grossMarginAnalysis = {
+      crop: primaryCrop,
+      farmSize,
+      yieldKg: validatedYieldKg,
+      pricePerKg: validatedPricePerKg,
+      revenue,
+      seedCost: seedCostValue,
+      labourCosts: {
+        ploughing: ploughingCostValue,
+        planting: plantingLabourCostValue,
+        weeding: weedingCostValue,
+        harvesting: harvestingCostValue,
+        total: ploughingCostValue + plantingLabourCostValue + weedingCostValue + harvestingCostValue
+      },
+      transportCost: transportCostValue,
+      packagingCost: packagingCostValue,
+      miscellaneousCost: miscellaneousCostValue,
+      totalCosts,
+      grossMargin,
+      marginPercentage
+    };
+
+    // === Soil test analysis and fertilizer plan ===
     let soilAnalysis = null;
     let fertilizerPlan = null;
 
@@ -305,48 +380,63 @@ export async function POST(request: NextRequest) {
         };
 
         soilAnalysis = soilTestInterpreter.interpretSoilTest(soilTestData);
+        soilAnalysis = {
+          ...soilAnalysis,
+          ph: parseFloat(soilTestPH) || 0,
+          phRating: soilTestPHRating || 'Not tested',
+          phosphorus: parseFloat(soilTestP) || 0,
+          phosphorusRating: soilTestPRating || 'Not tested',
+          potassium: parseFloat(soilTestK) || 0,
+          potassiumRating: soilTestKRating || 'Not tested',
+          calcium: parseFloat(soilTestCa) || 0,
+          calciumRating: soilTestCaRating || 'Not tested',
+          magnesium: parseFloat(soilTestMg) || 0,
+          magnesiumRating: soilTestMgRating || 'Not tested',
+          sodium: parseFloat(soilTestNa) || 0,
+          sodiumRating: soilTestNaRating || 'Not tested',
+          totalNitrogen: parseFloat(soilTestNPercent) || 0,
+          totalNitrogenRating: soilTestNPercentRating || 'Not tested',
+          organicMatter: parseFloat(soilTestOM) || 0,
+          organicMatterRating: soilTestOMRating || 'Not tested',
+          organicCarbon: parseFloat(soilTestOC) || 0,
+          organicCarbonRating: soilTestOCRating || 'Not tested',
+          cec: parseFloat(soilTestCEC) || 0,
+          cecRating: soilTestCECRating || 'Not tested',
+        };
 
-        if (soilAnalysis) {
-          soilAnalysis.ph = parseFloat(soilTestPH) || 0;
-          soilAnalysis.phosphorus = parseFloat(soilTestP) || 0;
-          soilAnalysis.potassium = parseFloat(soilTestK) || 0;
-          soilAnalysis.calcium = parseFloat(soilTestCa) || 0;
-          soilAnalysis.magnesium = parseFloat(soilTestMg) || 0;
-          soilAnalysis.sodium = parseFloat(soilTestNa) || 0;
-          soilAnalysis.totalNitrogen = parseFloat(soilTestNPercent) || 0;
-          soilAnalysis.organicCarbon = parseFloat(soilTestOC) || 0;
-          soilAnalysis.organicMatter = parseFloat(soilTestOM) || 0;
-          soilAnalysis.cec = parseFloat(soilTestCEC) || 0;
+        console.log("📊 Soil Analysis created:", {
+          ph: soilAnalysis.ph,
+          phRating: soilAnalysis.phRating,
+          phosphorus: soilAnalysis.phosphorus,
+          phosphorusRating: soilAnalysis.phosphorusRating,
+        });
 
-          soilAnalysis.phRating = soilTestPHRating || '';
-          soilAnalysis.phosphorusRating = soilTestPRating || '';
-          soilAnalysis.potassiumRating = soilTestKRating || '';
-          soilAnalysis.calciumRating = soilTestCaRating || '';
-          soilAnalysis.magnesiumRating = soilTestMgRating || '';
-          soilAnalysis.sodiumRating = soilTestNaRating || '';
-          soilAnalysis.totalNitrogenRating = soilTestNPercentRating || '';
-          soilAnalysis.organicCarbonRating = soilTestOCRating || '';
-          soilAnalysis.organicMatterRating = soilTestOMRating || '';
-          soilAnalysis.cecRating = soilTestCECRating || '';
+        const hasRecommendations = recPlantingFertilizer || recTopdressingFertilizer || recPotassiumFertilizer;
+        const hasUserSelections = plantingFertilizerToUse || topdressingFertilizerToUse || potassiumFertilizerToUse;
 
-          soilAnalysis.plantingFertilizerNutrients = plantingFertilizerNutrients || null;
-          soilAnalysis.topdressingFertilizerNutrients = topdressingFertilizerNutrients || null;
-          soilAnalysis.potassiumFertilizerNutrients = potassiumFertilizerNutrients || null;
-          soilAnalysis.crop = primaryCrop;
-          soilAnalysis.farmSize = farmSize;
-        }
+        if (hasRecommendations || hasUserSelections) {
+          console.log("📊 Calculating fertilizer plan with:", {
+            recPlantingFertilizer,
+            recPlantingQuantity,
+            recTopdressingFertilizer,
+            recTopdressingQuantity,
+            recPotassiumFertilizer,
+            recPotassiumQuantity,
+            plantingFertilizerToUse,
+            topdressingFertilizerToUse,
+            potassiumFertilizerToUse,
+          });
 
-        if (soilTestData.recPlantingFertilizer && plantingFertilizerToUse) {
           fertilizerPlan = fertilizerCalculator.calculateFromRecommendations(
             {
               targetYield: soilTestData.targetYield ||
                 soilTestInterpreter.getYieldCategory(primaryCrop, 'medium') * 1000 || 2000,
-              plantingFertilizer: soilTestData.recPlantingFertilizer,
-              plantingQuantity: soilTestData.recPlantingQuantity || 100,
-              topdressingFertilizer: soilTestData.recTopdressingFertilizer || "",
-              topdressingQuantity: soilTestData.recTopdressingQuantity || 0,
-              potassiumFertilizer: soilTestData.recPotassiumFertilizer || "",
-              potassiumQuantity: soilTestData.recPotassiumQuantity || 0
+              plantingFertilizer: recPlantingFertilizer || "",
+              plantingQuantity: recPlantingQuantity ? parseFloat(recPlantingQuantity) : 50,
+              topdressingFertilizer: recTopdressingFertilizer || "",
+              topdressingQuantity: recTopdressingQuantity ? parseFloat(recTopdressingQuantity) : 0,
+              potassiumFertilizer: recPotassiumFertilizer || "",
+              potassiumQuantity: recPotassiumQuantity ? parseFloat(recPotassiumQuantity) : 0
             },
             {
               planting: plantingFertilizerToUse ? [plantingFertilizerToUse] : [],
@@ -363,79 +453,110 @@ export async function POST(request: NextRequest) {
             country || 'kenya',
             primaryCrop
           );
+
+          console.log("✅ Fertilizer plan calculated:", fertilizerPlan ? {
+            totalCost: fertilizerPlan.totalCost,
+            plantingCount: fertilizerPlan.plantingRecommendations?.length,
+            topdressingCount: fertilizerPlan.topDressingRecommendations?.length
+          } : "No plan generated");
         }
       } catch (error) {
         console.error("Error processing soil test:", error);
       }
     }
 
-    // ========== GROSS MARGIN CALCULATION ==========
-    let grossMargin = null;
-    try {
-      const defaultYieldBags = getCropDefaultYield(primaryCrop);
-      const grossMarginInput = {
-        crop: primaryCrop,
-        cropAcres: farmSize,
-        actualYield: validatedYield || defaultYieldBags,
-        yieldUnit: yieldUnit || harvestUnit || "90kg bags",
-        pricePerUnit: validatedPrice || 6750,
-        priceUnit: priceUnit || "kg",
-        seedRate: parseFloat(seedRate) || parseFloat(seedQuantity) || 10,
-        seedCost: parseFloat(seedCost) || 180,
-        plantingFertilizerCost: plantingFertilizerCost ? parseFloat(plantingFertilizerCost) : 6400,
-        plantingFertilizerQuantity: parseFloat(plantingFertilizerQuantityKg) || 52,
-        topdressingFertilizerCost: topdressingFertilizerCost ? parseFloat(topdressingFertilizerCost) : 6000,
-        topdressingFertilizerQuantity: parseFloat(topdressingFertilizerQuantityKg) || 96,
-        potassiumFertilizerCost: potassiumFertilizerCost ? parseFloat(potassiumFertilizerCost) : 2850,
-        potassiumFertilizerQuantity: parseFloat(potassiumFertilizerQuantityKg) || 50,
-        ploughingCost: parseFloat(ploughingCost) || 7000,
-        plantingLabourCost: parseFloat(plantingLabourCost) || 2000,
-        weedingCost: parseFloat(weedingCost) || 2500,
-        harvestingCost: parseFloat(harvestingCost) || 2000,
-        transportCostPerKg: parseFloat(transportCostPerKg) || 5,
-        transportUnit: "kg",
-        emptyBags: parseFloat(emptyBags) || 0,
-        bagCost: parseFloat(bagCost) || 40
-      };
-      grossMargin = calculateGrossMarginFromFarmerData(grossMarginInput);
-    } catch (error) {
-      console.error("Error calculating gross margin:", error);
-    }
-
-    // ========== GENERATE RECOMMENDATIONS ==========
-    const recommendationsOutput = await generateRecommendations({
-      hasSoilTest: hasDoneSoilTest === "Yes",
-      soilAnalysis,
-      fertilizerPlan,
-      crop: primaryCrop,
-      crops: cropsArray,
-      farmerData: {
-        farmerName: farmerName || 'Farmer',
-        usePlantingFertilizer,
-        useTopdressingFertilizer,
-        conservationPractices,
-        commonPests,
-        commonDiseases,
-        managementLevel: "Medium",
-        actualYieldKg: validatedYield ? convertToKg(primaryCrop, validatedYield, yieldUnit || harvestUnit || "kg") : null,
-        pricePerKg: validatedPrice ? convertToKg(primaryCrop, validatedPrice, priceUnit || "kg") / validatedPrice : null,
-        totalCosts: grossMargin?.totalCosts || null,
-        country: country || 'kenya',
-        limePricePerBag: calciticLimePricePerBag ? parseFloat(calciticLimePricePerBag) : 300,
-        recCalciticLime: recCalciticLime ? parseFloat(recCalciticLime) : 0,
-        recDolomiticLime: recDolomiticLime ? parseFloat(recDolomiticLime) : 0,
-        dolomiticLimePricePerBag: dolomiticLimePricePerBag ? parseFloat(dolomiticLimePricePerBag) : 300,
-        plantsDamaged: plantsDamaged ? parseInt(plantsDamaged) : null,
-        language: userLanguage,
-        deficiencySymptoms,
-        deficiencyLocation,
-        spacing: spacing,
-        storageMethod: storageMethod,
-        wantsNutritionBenefits: wantsNutritionBenefits === true || wantsNutritionBenefits === "Yes",   // NEW
-      }
+    // === Generate recommendations (with caching) ===
+    let recommendationsOutput = null;
+    const cacheKey = getCacheKey({
+      userLanguage,
+      primaryCrop,
+      hasDoneSoilTest,
+      farmSize,
+      soilTestPH,
+      soilTestP,
+      soilTestK,
+      actualYieldKg: validatedYieldKg,
+      pricePerKg: validatedPricePerKg,
+      totalCosts,
+      country,
+      plantsDamaged,
+      deficiencySymptoms,
+      deficiencyLocation,
+      spacing,
+      storageMethod,
+      wantsNutritionBenefits,
     });
 
-    // ========== SAVE TO FIRESTORE ==========
+    if (cache.has(cacheKey)) {
+      const cached = cache.get(cacheKey);
+      if (Date.now() - cached.timestamp < CACHE_TTL) {
+        console.log("✅ Using cached recommendations");
+        recommendationsOutput = cached.data;
+      } else {
+        cache.delete(cacheKey);
+      }
+    }
+
+    if (!recommendationsOutput) {
+      console.log("📋 Generating fresh recommendations for:", primaryCrop);
+      try {
+        recommendationsOutput = await generateRecommendations({
+          hasSoilTest: hasDoneSoilTest === "Yes",
+          soilAnalysis,
+          fertilizerPlan,
+          crop: primaryCrop,
+          crops: cropsArray,
+          farmerData: {
+            farmerName: farmerName || 'Farmer',
+            usePlantingFertilizer,
+            useTopdressingFertilizer,
+            conservationPractices: cleanedConservationPractices,
+            commonPests: cleanedCommonPests,
+            commonDiseases: cleanedCommonDiseases,
+            managementLevel: "Medium",
+            actualYieldKg: validatedYieldKg,
+            pricePerKg: validatedPricePerKg,
+            totalCosts: totalCosts,
+            country: country || 'kenya',
+            limePricePerBag: calciticLimePricePerBag ? parseFloat(calciticLimePricePerBag) : 300,
+            recCalciticLime: recCalciticLime ? parseFloat(recCalciticLime) : 0,
+            recDolomiticLime: recDolomiticLime ? parseFloat(recDolomiticLime) : 0,
+            dolomiticLimePricePerBag: dolomiticLimePricePerBag ? parseFloat(dolomiticLimePricePerBag) : 300,
+            plantsDamaged: plantsDamaged ? parseInt(plantsDamaged) : null,
+            language: userLanguage,
+            deficiencySymptoms,
+            deficiencyLocation,
+            spacing: spacing,
+            storageMethod: storageMethod,
+            wantsNutritionBenefits: wantsNutritionBenefits === true || wantsNutritionBenefits === "Yes",
+            currencySymbol: currencyConfig.symbol,
+            currencyName: currencyConfig.name,
+          }
+        });
+
+        cache.set(cacheKey, {
+          data: recommendationsOutput,
+          timestamp: Date.now(),
+        });
+        console.log("✅ Recommendations generated and cached");
+      } catch (error) {
+        console.error("❌ Error generating recommendations:", error);
+        const profitStatus = grossMargin >= 0 ? "profit" : "loss";
+        recommendationsOutput = {
+          list: [
+            { key: "welcome_message", params: { content: `Welcome ${farmerName || "Farmer"}! I've analyzed your ${primaryCrop} farm.` } },
+            { key: "financial_summary", params: { content: `Revenue: ${formatCurrencyForCountry(revenue, country)} | Costs: ${formatCurrencyForCountry(totalCosts, country)} | ${profitStatus === "profit" ? "Profit" : "Loss"}: ${formatCurrencyForCountry(Math.abs(grossMargin), country)}` } }
+          ],
+          financialAdvice: `Keep tracking your costs and yields. Every kilogram counts!`,
+          structuredList: [
+            { key: "quick_summary", params: { content: `${primaryCrop.toUpperCase()} Enterprise: ${validatedYieldKg.toLocaleString()} kg @ ${formatCurrencyForCountry(validatedPricePerKg, country)}/kg = ${formatCurrencyForCountry(revenue, country)} revenue` } }
+          ],
+          structuredFinancialAdvice: null
+        };
+      }
+    }
+
+    // === Save to Firestore ===
     const sessionRef = db.collection("farmer_sessions").doc();
     const sessionId = sessionRef.id;
 
@@ -450,79 +571,48 @@ export async function POST(request: NextRequest) {
       ward,
       village,
       country: country || 'kenya',
-      totalFarmSize: totalFarmSize ? parseFloat(totalFarmSize) : null,
-      cultivatedAcres: farmSize,
-      waterSources: waterSources ? waterSources.split(',').map((s: string) => s.trim()) : [],
       crops: cropsArray,
       primaryCrop,
-      cropVarieties,
       cropAcres: farmSize,
-      plantingDate,
-      plantingAdvice,
-      plantingAdviceText,
-      seedSource,
+      yieldData: {
+        actualKg: validatedYieldKg,
+        pricePerKg: validatedPricePerKg,
+        revenue: revenue,
+        warnings: [...yieldWarnings, ...priceWarnings]
+      },
+      seedCost: seedCostValue,
+      seedRate: parseFloat(seedRate) || parseFloat(seedQuantity) || null,
+      labourCosts: {
+        ploughing: ploughingCostValue,
+        planting: plantingLabourCostValue,
+        weeding: weedingCostValue,
+        harvesting: harvestingCostValue
+      },
+      transportCostTotal: transportCostValue,
+      packagingCostTotal: packagingCostValue,
+      miscellaneousCostTotal: miscellaneousCostValue,
       spacing,
       spacingInfo,
       spacingWarning,
-      seedRate: parseFloat(seedRate) || parseFloat(seedQuantity) || null,
-      seedCost: seedCost ? parseFloat(seedCost) : null,
-
-      plantingFertilizer: {
-        used: usePlantingFertilizer === "yes",
-        type: plantingFertilizerType || null,
-        quantity: plantingFertilizerQuantityKg ? parseFloat(plantingFertilizerQuantityKg) : null,
-        cost: plantingFertilizerCost ? parseFloat(plantingFertilizerCost) : null,
-        nutrients: plantingFertilizerNutrients || null
-      },
-      topdressingFertilizer: {
-        used: useTopdressingFertilizer === "yes",
-        type: topdressingFertilizerType || null,
-        quantity: topdressingFertilizerQuantityKg ? parseFloat(topdressingFertilizerQuantityKg) : null,
-        cost: topdressingFertilizerCost ? parseFloat(topdressingFertilizerCost) : null,
-        nutrients: topdressingFertilizerNutrients || null
-      },
-      potassiumFertilizer: {
-        used: potassiumFertilizerToUse ? true : false,
-        type: potassiumFertilizerToUse || null,
-        quantity: potassiumFertilizerQuantityKg ? parseFloat(potassiumFertilizerQuantityKg) : null,
-        cost: potassiumFertilizerCost ? parseFloat(potassiumFertilizerCost) : null,
-        nutrients: potassiumFertilizerNutrients || null
-      },
-
-      commonPests: commonPests ? commonPests.split(',').map((p: string) => p.trim()) : [],
-      commonDiseases: commonDiseases ? commonDiseases.split(',').map((d: string) => d.trim()) : [],
-      plantsDamaged: plantsDamaged ? parseInt(plantsDamaged) : null,
-
-      yieldData: {
-        actual: validatedYield || null,
-        unit: yieldUnit || harvestUnit || "kg",
-        inKg: validatedYield ? convertToKg(primaryCrop, validatedYield, yieldUnit || harvestUnit || "kg") : null,
-        pricePerUnit: validatedPrice || null,
-        pricePerKg: validatedPrice ? convertToKg(primaryCrop, validatedPrice, priceUnit || "kg") / validatedPrice : null,
-        priceUnit: priceUnit || "kg",
-        warnings: [...yieldWarnings, ...priceWarnings]
-      },
-
+      grossMarginAnalysis,
+      plantingDate,
+      plantingAdvice,
+      plantingAdviceText,
+      commonPests: cleanedCommonPests ? cleanedCommonPests.split(',').map((p: string) => p.trim()) : [],
+      commonDiseases: cleanedCommonDiseases ? cleanedCommonDiseases.split(',').map((d: string) => d.trim()) : [],
       storageMethod,
-      labourCosts: {
-        ploughing: parseFloat(ploughingCost) || null,
-        planting: parseFloat(plantingLabourCost) || null,
-        weeding: parseFloat(weedingCost) || null,
-        harvesting: parseFloat(harvestingCost) || null
-      },
-      transportCostPerKg: parseFloat(transportCostPerKg) || null,
-      emptyBags: parseFloat(emptyBags) || null,
-      bagCost: parseFloat(bagCost) || null,
-
-      conservationPractices: conservationPractices ? conservationPractices.split(',').map((p: string) => p.trim()) : [],
-
-      limePricePerBag: calciticLimePricePerBag ? parseFloat(calciticLimePricePerBag) : null,
-      recCalciticLime: recCalciticLime ? parseFloat(recCalciticLime) : null,
-      recDolomiticLime: recDolomiticLime ? parseFloat(recDolomiticLime) : null,
-      dolomiticLimePricePerBag: dolomiticLimePricePerBag ? parseFloat(dolomiticLimePricePerBag) : null,
-
-      wantsNutritionBenefits: wantsNutritionBenefits === true || wantsNutritionBenefits === "Yes",   // NEW
-
+      conservationPractices: cleanedConservationPractices ? cleanedConservationPractices.split(',').map((p: string) => p.trim()) : [],
+      recommendations: recommendationsOutput.list,
+      financialAdvice: recommendationsOutput.financialAdvice,
+      structuredList: recommendationsOutput.structuredList || [],
+      structuredFinancialAdvice: recommendationsOutput.structuredFinancialAdvice || null,
+      fertilizerPlan: fertilizerPlan ? {
+        totalCost: fertilizerPlan.totalCost,
+        farmSize: fertilizerPlan.farmSize,
+        plantingRecommendations: fertilizerPlan.plantingRecommendations,
+        topDressingRecommendations: fertilizerPlan.topDressingRecommendations,
+        perPlant: fertilizerPlan.perPlant
+      } : null,
       soilTest: hasDoneSoilTest === "Yes" ? {
         testDate: soilTestDate,
         ph: soilTestPH ? parseFloat(soilTestPH) : null,
@@ -547,6 +637,7 @@ export async function POST(request: NextRequest) {
         cecRating: soilTestCECRating,
         targetYield: targetYield ? parseFloat(targetYield) : null,
         recCalciticLime: recCalciticLime ? parseFloat(recCalciticLime) : null,
+        recDolomiticLime: recDolomiticLime ? parseFloat(recDolomiticLime) : null,
         recPlantingFertilizer: recPlantingFertilizer || null,
         recPlantingQuantity: recPlantingQuantity ? parseFloat(recPlantingQuantity) : null,
         recTopdressingFertilizer: recTopdressingFertilizer || null,
@@ -562,25 +653,12 @@ export async function POST(request: NextRequest) {
         topdressingFertilizerCost: topdressingFertilizerCost ? parseFloat(topdressingFertilizerCost) : null,
         potassiumFertilizerToUse: potassiumFertilizerToUse || null,
         potassiumFertilizerCost: potassiumFertilizerCost ? parseFloat(potassiumFertilizerCost) : null,
-        fertilizerPlan: fertilizerPlan ? {
-          totalCost: fertilizerPlan.totalCost,
-          planting: fertilizerPlan.plantingRecommendations,
-          topdressing: fertilizerPlan.topDressingRecommendations,
-          perPlant: fertilizerPlan.perPlant
-        } : null
       } : null,
-
       useCertifiedSeed: useCertifiedSeed === "yes",
-      smartphone: false,
-
-      recommendations: recommendationsOutput.list,
-      financialAdvice: recommendationsOutput.financialAdvice,
-      structuredList: recommendationsOutput.structuredList,
-      structuredFinancialAdvice: recommendationsOutput.structuredFinancialAdvice,
-      grossMarginAnalysis: grossMargin,
       deficiencySymptoms: deficiencySymptoms || null,
       deficiencyLocation: deficiencyLocation || null,
-
+      wantsNutritionBenefits: wantsNutritionBenefits === true || wantsNutritionBenefits === "Yes",
+      plantsDamaged: plantsDamaged ? parseInt(plantsDamaged) : null,
       metadata: {
         warnings: {
           yield: yieldWarnings,
@@ -589,27 +667,25 @@ export async function POST(request: NextRequest) {
         },
         createdAt: new Date().toISOString(),
         source: "logic-based",
-        version: "2.0"
+        version: "3.0-kg-only"
       }
     };
 
     await sessionRef.set(farmerSession);
-    console.log(`Saved farmer session ${sessionId} for crop ${primaryCrop} in ${country} with language ${userLanguage}`);
+    console.log(`✅ Saved farmer session ${sessionId} for ${primaryCrop}: ${validatedYieldKg.toLocaleString()} kg @ ${validatedPricePerKg} ${currencyConfig.symbol}/kg = ${revenue.toLocaleString()} ${currencyConfig.symbol} revenue`);
+    console.log(`📋 Recommendations count: ${recommendationsOutput.list.length}`);
+    console.log(`💰 Total costs breakdown: Transport: ${transportCostValue}, Packaging: ${packagingCostValue}, Misc: ${miscellaneousCostValue}`);
 
     return NextResponse.json({
       success: true,
+      sessionId: sessionId,
+      grossMarginAnalysis,
       recommendations: recommendationsOutput.list,
       structuredList: recommendationsOutput.structuredList,
       structuredFinancialAdvice: recommendationsOutput.structuredFinancialAdvice,
-      grossMarginAnalysis: grossMargin,
       financialAdvice: recommendationsOutput.financialAdvice,
-      sessionId: sessionId,
-      warnings: {
-        yield: yieldWarnings,
-        price: priceWarnings,
-        spacing: spacingWarning
-      },
-      plantingAdvice,
+      fertilizerPlan: fertilizerPlan,
+      warnings: { yield: yieldWarnings, price: priceWarnings, spacing: spacingWarning },
       welcomeMessage: `Welcome ${farmerName || "Farmer"}! I've prepared your recommendations for ${primaryCrop}.`
     }, { status: 200 });
 
@@ -625,8 +701,7 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   return NextResponse.json({
     status: "operational",
-    message: "Farmer Session Generation API",
-    version: "2.0",
-    supportedCrops: "All 219 crops across 75+ countries"
+    message: "Farmer Session Generation API - KG ONLY with Simplified Costs + Caching + Unified Currency",
+    version: "3.2"
   });
 }

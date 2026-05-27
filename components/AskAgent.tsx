@@ -1,4 +1,4 @@
-// components/AskAgent.tsx - Clean version with infinite loop fix
+// components/AskAgent.tsx - FINAL with dynamic currency and UK/US female voices
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -95,17 +95,14 @@ const AskAgent = ({
   sessionData,
   recommendations: oldRecommendations
 }: AskAgentProps) => {
-  // ✅ ALL HOOKS MUST COME FIRST - before any conditional returns
-
   // Core hooks
-  const { t, ready, isOnline } = useOfflineTranslation();
+  const { t, ready, isOnline, i18n } = useOfflineTranslation();
   const { currency } = useCurrency();
 
   // Safe translation helper
   const safeT = (key: string, params?: any): string => {
     try {
       const result = t(key, params);
-      // Handle if result is a Promise
       if (result && typeof result.then === 'function') {
         console.warn(`Translation for "${key}" returned a Promise`);
         return key;
@@ -144,48 +141,55 @@ const AskAgent = ({
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const streamTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const nameUsageCountRef = useRef(0);
-  const welcomeSetRef = useRef(false); // ✅ NEW: Track if welcome message has been set
+  const welcomeSetRef = useRef(false);
 
-  // Derived values (not hooks - safe to use here)
+  // Derived values
   const farmerName = userName;
   const farmerCountry = sessionData?.country || 'kenya';
 
-  // 🧪 TEST API - Temporary code to debug the API
+  // Helper to get display symbol (UI) based on language
+  const getDisplaySymbol = (): string => {
+    const lang = i18n.language || 'en';
+    if (lang === 'es') return '€';
+    if (lang === 'fr') return '€';
+    if (lang === 'sw') return 'Ksh';
+    if (lang === 'en') return '$'; // or keep 'Ksh' if you prefer
+    return currency.symbol || 'Ksh';
+  };
+
+  // Helper for spoken currency name (dynamic)
+  const getSpokenCurrencyName = (): string => {
+    // Spanish override: always say "Euros"
+    if (i18n.language === 'es') return 'Euros';
+    // For other languages, use the localized name from currency context
+    const lang = i18n.language;
+    switch (currency.code) {
+      case 'KES':
+        if (lang === 'fr') return 'Shillings kényans';
+        if (lang === 'sw') return 'Shilingi za Kenya';
+        return 'Kenyan Shillings';
+      case 'UGX':
+        if (lang === 'fr') return 'Shillings ougandais';
+        if (lang === 'sw') return 'Shilingi za Uganda';
+        return 'Ugandan Shillings';
+      case 'TZS':
+        if (lang === 'fr') return 'Shillings tanzaniens';
+        if (lang === 'sw') return 'Shilingi za Tanzania';
+        return 'Tanzanian Shillings';
+      default:
+        return currency.name;
+    }
+  };
+
+  // Sync language from session data
   useEffect(() => {
-    const testAPI = async () => {
-      try {
-        console.log("🧪 Testing API with POST...");
-        const testResponse = await fetch('/api/farmer/query', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          body: JSON.stringify({
-            question: "test question",
-            userId: "test-user",
-            sessionId: "test-session",
-            sessionData: {}
-          })
-        });
-
-        console.log("🧪 Test response status:", testResponse.status);
-        console.log("🧪 Test response headers:", Object.fromEntries(testResponse.headers.entries()));
-
-        if (testResponse.ok) {
-          const testData = await testResponse.json();
-          console.log("✅ Test success:", testData);
-        } else {
-          const testText = await testResponse.text();
-          console.log("❌ Test error:", testText.substring(0, 500));
-        }
-      } catch (error) {
-        console.error("💥 Test failed:", error);
-      }
-    };
-
-    testAPI();
-  }, []);
+    const sessionLang = sessionData?.language;
+    if (sessionLang && sessionLang !== i18n.language) {
+      console.log(`🌐 Syncing i18n language to: ${sessionLang}`);
+      i18n.changeLanguage(sessionLang);
+      localStorage.setItem('preferred-language', sessionLang);
+    }
+  }, [sessionData, i18n]);
 
   // Extract structured data from session
   useEffect(() => {
@@ -197,17 +201,21 @@ const AskAgent = ({
     }
   }, [sessionData]);
 
-  // Update language based on country
+  // Update recognition language based on i18n
   useEffect(() => {
-    if (sessionData?.country) {
-      const lang = getLanguageFromCountry(sessionData.country);
-      setRecognitionLanguage(lang);
-      console.log(`AskAgent: Language set to ${lang} for country ${sessionData.country}`);
-      if (recognitionRef.current) {
-        recognitionRef.current.lang = lang;
-      }
+    const lang = i18n.language || 'en';
+    let voiceLang = 'en-US';
+    if (lang === 'es') voiceLang = 'es-ES';
+    else if (lang === 'fr') voiceLang = 'fr-FR';
+    else if (lang === 'sw') voiceLang = 'sw-KE';
+    else if (lang === 'en') voiceLang = 'en-US';
+
+    setRecognitionLanguage(voiceLang);
+    console.log(`AskAgent: Voice language set to ${voiceLang} (UI: ${lang})`);
+    if (recognitionRef.current) {
+      recognitionRef.current.lang = voiceLang;
     }
-  }, [sessionData]);
+  }, [i18n.language]);
 
   // Reset name usage counter when session changes
   useEffect(() => {
@@ -219,12 +227,10 @@ const AskAgent = ({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingContent]);
 
-  // Initialize speech recognition and set welcome message - ✅ FIXED: only runs once
+  // Initialize speech recognition and set welcome message (once)
   useEffect(() => {
-    // Skip if welcome message already set
     if (welcomeSetRef.current) return;
 
-    // Initialize speech recognition
     if (typeof window !== 'undefined' && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
       const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
       recognitionRef.current = new SpeechRecognition();
@@ -243,7 +249,6 @@ const AskAgent = ({
       console.log(`Speech recognition initialized with language: ${recognitionLanguage}`);
     }
 
-    // Set welcome message only once
     const greetings = [
       safeT('greeting_1'),
       safeT('greeting_2'),
@@ -277,9 +282,8 @@ const AskAgent = ({
       timestamp: Date.now()
     }]);
 
-    welcomeSetRef.current = true; // ✅ Mark as set
+    welcomeSetRef.current = true;
 
-    // Cleanup function
     return () => {
       if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch (error) {}
@@ -291,9 +295,8 @@ const AskAgent = ({
         window.speechSynthesis.cancel();
       }
     };
-  }, [sessionData, recognitionLanguage]); // ✅ Only run when sessionData or recognitionLanguage changes
+  }, [sessionData, recognitionLanguage, safeT]);
 
-  // ✅ NOW you can have conditional returns after ALL hooks
   if (!ready) {
     return (
       <div className="flex justify-center items-center min-h-screen">
@@ -301,58 +304,6 @@ const AskAgent = ({
       </div>
     );
   }
-
-  // Helper to get currency name for speech
-  const getCurrencyName = () => {
-    switch(currency.code) {
-      case 'KES': return 'Kenyan Shillings';
-      case 'UGX': return 'Ugandan Shillings';
-      case 'TZS': return 'Tanzanian Shillings';
-      case 'RWF': return 'Rwandan Francs';
-      case 'BIF': return 'Burundian Francs';
-      case 'SSP': return 'South Sudanese Pounds';
-      case 'ETB': return 'Ethiopian Birr';
-      case 'SOS': return 'Somali Shillings';
-      case 'DJF': return 'Djiboutian Francs';
-      case 'ERN': return 'Eritrean Nakfa';
-      case 'NGN': return 'Nigerian Nairas';
-      case 'GHS': return 'Ghanaian Cedis';
-      case 'XOF': return 'West African CFA Francs';
-      case 'XAF': return 'Central African CFA Francs';
-      case 'GNF': return 'Guinean Francs';
-      case 'LRD': return 'Liberian Dollars';
-      case 'SLL': return 'Sierra Leonean Leones';
-      case 'GMD': return 'Gambian Dalasis';
-      case 'CVE': return 'Cape Verdean Escudos';
-      case 'CDF': return 'Congolese Francs';
-      case 'AOA': return 'Angolan Kwanzas';
-      case 'STN': return 'São Tomé and Príncipe Dobras';
-      case 'ZAR': return 'South African Rand';
-      case 'NAD': return 'Namibian Dollars';
-      case 'BWP': return 'Botswana Pula';
-      case 'ZWL': return 'Zimbabwean Dollars';
-      case 'ZMW': return 'Zambian Kwacha';
-      case 'MWK': return 'Malawian Kwacha';
-      case 'MZN': return 'Mozambican Meticais';
-      case 'MGA': return 'Malagasy Ariary';
-      case 'KMF': return 'Comorian Francs';
-      case 'MUR': return 'Mauritian Rupees';
-      case 'SCR': return 'Seychellois Rupees';
-      case 'SZL': return 'Swazi Lilangeni';
-      case 'LSL': return 'Lesotho Loti';
-      case 'EGP': return 'Egyptian Pounds';
-      case 'SDG': return 'Sudanese Pounds';
-      case 'LYD': return 'Libyan Dinars';
-      case 'TND': return 'Tunisian Dinars';
-      case 'DZD': return 'Algerian Dinars';
-      case 'MAD': return 'Moroccan Dirhams';
-      case 'MRU': return 'Mauritanian Ouguiya';
-      case 'USD': return 'US Dollars';
-      case 'GBP': return 'British Pounds';
-      case 'EUR': return 'Euros';
-      default: return currency.name;
-    }
-  };
 
   // Clean text of emojis and formatting
   const cleanText = (text: string): string => {
@@ -373,76 +324,38 @@ const AskAgent = ({
       .trim();
   };
 
-  // Prepare text for speech with personalization
+  // Prepare text for speech: replace current currency symbol with its full name
   const prepareForSpeech = (text: string): string => {
     let speechText = cleanText(text);
-
-    // Currency replacements
-    switch(currency.code) {
-      case 'ZAR':
-        speechText = speechText.replace(/R\s/g, 'South African Rand ');
-        speechText = speechText.replace(/R\b/g, 'South African Rand');
-        break;
-      case 'KES':
-        speechText = speechText.replace(/Ksh\s/g, 'Kenyan Shillings ');
-        speechText = speechText.replace(/Ksh\b/g, 'Kenyan Shillings');
-        break;
-      case 'UGX':
-        speechText = speechText.replace(/USh\s/g, 'Ugandan Shillings ');
-        speechText = speechText.replace(/USh\b/g, 'Ugandan Shillings');
-        break;
-      case 'TZS':
-        speechText = speechText.replace(/TSh\s/g, 'Tanzanian Shillings ');
-        speechText = speechText.replace(/TSh\b/g, 'Tanzanian Shillings');
-        break;
-      case 'RWF':
-        speechText = speechText.replace(/FRw\s/g, 'Rwandan Francs ');
-        speechText = speechText.replace(/FRw\b/g, 'Rwandan Francs');
-        break;
-      case 'GHS':
-        speechText = speechText.replace(/GH₵\s/g, 'Ghanaian Cedis ');
-        speechText = speechText.replace(/GH₵\b/g, 'Ghanaian Cedis');
-        break;
-      case 'NGN':
-        speechText = speechText.replace(/₦\s/g, 'Nigerian Nairas ');
-        speechText = speechText.replace(/₦\b/g, 'Nigerian Nairas');
-        break;
-      case 'ETB':
-        speechText = speechText.replace(/Br\s/g, 'Ethiopian Birr ');
-        speechText = speechText.replace(/Br\b/g, 'Ethiopian Birr');
-        break;
-      case 'USD':
-        speechText = speechText.replace(/\$\s/g, 'US Dollars ');
-        speechText = speechText.replace(/\$\b/g, 'US Dollars');
-        break;
-      case 'GBP':
-        speechText = speechText.replace(/£\s/g, 'British Pounds ');
-        speechText = speechText.replace(/£\b/g, 'British Pounds');
-        break;
-      case 'EUR':
-        speechText = speechText.replace(/€\s/g, 'Euros ');
-        speechText = speechText.replace(/€\b/g, 'Euros');
-        break;
-      default:
-        const symbol = currency.symbol;
-        if (symbol && symbol !== '') {
-          const regex = new RegExp(`${symbol}\\s`, 'g');
-          speechText = speechText.replace(regex, `${currency.name} `);
-        }
-    }
+    const currencyName = getSpokenCurrencyName();
+    const symbol = currency.symbol;
+    const escapedSymbol = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Replace symbol occurrences (with or without trailing space)
+    speechText = speechText.replace(new RegExp(`${escapedSymbol}\\s`, 'g'), `${currencyName} `);
+    speechText = speechText.replace(new RegExp(`\\b${escapedSymbol}\\b`, 'g'), currencyName);
+    // Also replace common East African symbols for safety (if they appear, e.g., in stored text)
+    speechText = speechText
+      .replace(/Ksh\s/g, `${currencyName} `)
+      .replace(/Ksh\b/g, currencyName)
+      .replace(/USh\s/g, `${currencyName} `)
+      .replace(/USh\b/g, currencyName)
+      .replace(/TSh\s/g, `${currencyName} `)
+      .replace(/TSh\b/g, currencyName)
+      .replace(/€\s/g, `${currencyName} `)
+      .replace(/€\b/g, currencyName)
+      .replace(/\$\s/g, `${currencyName} `)
+      .replace(/\$\b/g, currencyName);
 
     nameUsageCountRef.current++;
     const useName = nameUsageCountRef.current % 3 === 0;
-
     speechText = speechText
       .replace(/\b(farmer)\b/gi, useName ? farmerName : 'the farmer')
       .replace(/\b(you)\b/gi, useName ? farmerName : 'you')
       .replace(/\b(your)\b/gi, useName ? `${farmerName}'s` : 'your');
-
     return speechText;
   };
 
-  // Synchronized streaming function
+  // Synchronized streaming function with voice (enhanced UK/US female selection)
   const streamAnswerWithVoice = async (fullText: string, isFinancial: boolean = false) => {
     if (!voiceEnabled || !window.speechSynthesis) {
       setMessages(prev => [...prev, {
@@ -458,7 +371,7 @@ const AskAgent = ({
     setStreamingContent("");
     setCurrentWordIndex(0);
 
-    let speechText = prepareForSpeech(fullText);
+    const speechText = prepareForSpeech(fullText);
     const words = speechText.split(' ');
     wordsRef.current = words;
 
@@ -468,51 +381,105 @@ const AskAgent = ({
     utterance.volume = 1.0;
     utterance.lang = recognitionLanguage;
 
-    // Comprehensive female voice names
-    const femaleVoiceNames = [
-      'Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Veena', 'Nicky',
-      'Catherine', 'Fiona', 'Martha', 'Naomi', 'Sangeeta', 'Rishi', 'Lekha',
-      'Google UK English Female', 'Microsoft Jenny', 'Microsoft Aria',
-      'Microsoft Sonia', 'Microsoft Zira', 'Microsoft Libby', 'Microsoft Heidi',
-      'Microsoft Hazel', 'Microsoft Susan', 'Microsoft Kate', 'Microsoft Helen',
-      'Google Deutsch Female', 'Google français Female', 'Google español Female',
-      'Audrey', 'Amélie', 'Chloé', 'Margaux', 'Stéphanie', 'Cécile',
-      'Julie', 'Nathalie', 'Sandrine', 'Valérie', 'Véronique',
-      'Mónica', 'Carmen', 'Paloma', 'Lucia', 'Sofia', 'Elena',
-      'Ana', 'Isabel', 'Laura', 'María', 'Patricia', 'Rosa',
-      'Rafiki', 'Zawadi', 'Aisha', 'Makena', 'Subira', 'Asha',
-      'Fatuma', 'Halima', 'Jamila', 'Khadija', 'Mariam', 'Salma',
-      'Ivy', 'Joanna', 'Kendra', 'Kimberly', 'Salli', 'Amy', 'Emma',
-      'Marlene', 'Vicki', 'Katja', 'Mizuki', 'Seoyeon', 'Zhiyu',
-      'Aditi', 'Lekha', 'Nora', 'Liv', 'Ewa', 'Maja', 'Gwyneth',
-      'Celine', 'Lea', 'Mathilde', 'Chantal', 'Cecile', 'Helene'
-    ];
-
+    // ========== ENHANCED VOICE SELECTION (UK/US SEPARATED, FEMALE-ONLY) ==========
     const voices = window.speechSynthesis.getVoices();
     const matchingVoices = voices.filter(v => v.lang === recognitionLanguage);
-    let preferredVoice;
+    let preferredVoice = null;
 
-    if (matchingVoices.length > 0) {
-      preferredVoice = matchingVoices.find(v =>
-        femaleVoiceNames.some(name => v.name.includes(name))
-      );
-
-      if (!preferredVoice) {
-        const malePatterns = ['Daniel', 'James', 'David', 'John', 'Paul', 'Mark', 'Michael', 'Alex', 'Thomas', 'Robert', 'Richard'];
-        preferredVoice = matchingVoices.find(v =>
-          !malePatterns.some(pattern => v.name.includes(pattern))
-        ) || matchingVoices[0];
-        console.log('No female voice found for language, using non-male voice:', preferredVoice.name);
+    // Helper for UK female voices (en-GB)
+    const findBritishEnglishFemale = (): SpeechSynthesisVoice | null => {
+      const femaleNames = [
+        'libby', 'hazel', 'susan', 'maisie', 'sonia', 'kate', 'victoria', 'millie', 'olivia',
+        'google uk english female', 'microsoft libby', 'microsoft hazel', 'microsoft susan',
+        'microsoft maisie', 'microsoft sonia', 'british english female', 'uk english female'
+      ];
+      for (const name of femaleNames) {
+        const voice = matchingVoices.find(v => v.name.toLowerCase().includes(name));
+        if (voice) return voice;
       }
+      const maleIndicators = ['george', 'ryan', 'thomas', 'david', 'mark', 'james', 'john', 'paul', 'michael'];
+      const anyBritishFemale = matchingVoices.find(v => !maleIndicators.some(m => v.name.toLowerCase().includes(m)));
+      if (anyBritishFemale) return anyBritishFemale;
+      return matchingVoices[0] || null;
+    };
+
+    // Helper for US female voices (en-US)
+    const findAmericanEnglishFemale = (): SpeechSynthesisVoice | null => {
+      const femaleNames = [
+        'samantha', 'victoria', 'zira', 'jenny', 'aria', 'google us english female',
+        'microsoft jenny', 'microsoft zira', 'microsoft aria', 'us english female'
+      ];
+      for (const name of femaleNames) {
+        const voice = matchingVoices.find(v => v.name.toLowerCase().includes(name));
+        if (voice) return voice;
+      }
+      const maleIndicators = ['david', 'mark', 'james', 'john', 'paul', 'michael', 'alex', 'thomas'];
+      const anyFemale = matchingVoices.find(v => !maleIndicators.some(m => v.name.toLowerCase().includes(m)));
+      if (anyFemale) return anyFemale;
+      return matchingVoices[0] || null;
+    };
+
+    // French voice selection (unchanged)
+    const findFrenchVoice = (): SpeechSynthesisVoice | null => {
+      const frenchFemale = matchingVoices.find(v =>
+        v.name.toLowerCase().includes('vivienne') ||
+        v.name.toLowerCase().includes('denise') ||
+        v.name.toLowerCase().includes('google français female') ||
+        v.name.toLowerCase().includes('marie') ||
+        v.name.toLowerCase().includes('chloe')
+      );
+      if (frenchFemale) return frenchFemale;
+      return matchingVoices[0] || null;
+    };
+
+    // Spanish voice selection (unchanged)
+    const findSpanishVoice = (): SpeechSynthesisVoice | null => {
+      const femaleNames = [
+        'elena', 'ximena', 'maria', 'paloma', 'sofia', 'catalina', 'salome', 'belkys',
+        'ramona', 'andrea', 'lorena', 'teresa', 'marta', 'karla', 'dalia', 'yolanda',
+        'margarita', 'tania', 'camila', 'karina', 'elvira', 'valentina', 'paola',
+        'michelle', 'gabriela', 'lucia', 'laura', 'fernanda', 'victoria', 'monica',
+        'paulina', 'sabina', 'helena', 'florencia'
+      ];
+      for (const name of femaleNames) {
+        const voice = matchingVoices.find(v => v.name.toLowerCase().includes(name));
+        if (voice) return voice;
+      }
+      const nonMale = matchingVoices.find(v =>
+        !v.name.toLowerCase().includes('alvaro') &&
+        !v.name.toLowerCase().includes('jorge') &&
+        !v.name.toLowerCase().includes('manuel')
+      );
+      if (nonMale) return nonMale;
+      return matchingVoices[0] || null;
+    };
+
+    // Swahili voice selection (unchanged)
+    const findSwahiliVoice = (): SpeechSynthesisVoice | null => {
+      let rafiki = matchingVoices.find(v => v.name.toLowerCase().includes('rafiki'));
+      if (rafiki) return rafiki;
+      return matchingVoices[0] || null;
+    };
+
+    // ---- Apply language-specific selection ----
+    if (recognitionLanguage === 'en-GB') {
+      preferredVoice = findBritishEnglishFemale();
+    } else if (recognitionLanguage === 'en-US') {
+      preferredVoice = findAmericanEnglishFemale();
+    } else if (recognitionLanguage === 'fr-FR' || recognitionLanguage.startsWith('fr')) {
+      preferredVoice = findFrenchVoice();
+    } else if (recognitionLanguage === 'es-ES' || recognitionLanguage.startsWith('es')) {
+      preferredVoice = findSpanishVoice();
+    } else if (recognitionLanguage === 'sw-KE' || recognitionLanguage.startsWith('sw')) {
+      preferredVoice = findSwahiliVoice();
     } else {
-      preferredVoice = voices.find(v =>
-        femaleVoiceNames.some(name => v.name.includes(name))
-      ) || voices.find(v => !v.name.includes('Daniel') && !v.name.includes('James') && !v.name.includes('David'));
+      // Fallback: any voice from the matching list
+      preferredVoice = matchingVoices[0] || null;
     }
 
     if (preferredVoice) {
       utterance.voice = preferredVoice;
-      console.log(`Using FEMALE voice: ${preferredVoice.name} (${preferredVoice.lang})`);
+      console.log(`🔊 Speaking with voice: ${preferredVoice.name} (${preferredVoice.lang})`);
     }
 
     utteranceRef.current = utterance;
@@ -533,8 +500,9 @@ const AskAgent = ({
     };
 
     utterance.onend = () => {
-      setStreamingContent(fullText);
+      setStreamingContent(speechText);
       setTimeout(() => {
+        // Store original text (with raw currency symbol) – UI will replace later
         setMessages(prev => [...prev, {
           role: "assistant",
           content: fullText,
@@ -816,17 +784,14 @@ const AskAgent = ({
     }
   ];
 
-  // Handle grouped recommendations
+  // Render grouped recommendations (unchanged)
   const renderRecommendationText = (item: StructuredItem, idx: number) => {
     const resolvedParams = resolveNestedTranslations(item.params || {});
-
     if (item.key === 'gap_grouped' && resolvedParams.gapKey) {
       const gapText = safeT(resolvedParams.gapKey, {});
       resolvedParams.gapText = gapText;
     }
-
     const text = safeT(item.key, resolvedParams);
-
     return (
       <div key={idx} className="bg-white/20 backdrop-blur-sm rounded-xl p-3 text-white">
         <span className="font-bold mr-2">{idx + 1}.</span>
@@ -851,10 +816,7 @@ const AskAgent = ({
       <div className="bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500 rounded-2xl p-5 shadow-xl border-2 border-white/30">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link
-              href={`/interview/${sessionId}`}
-              className="p-2 bg-white/20 backdrop-blur-sm hover:bg-white/30 rounded-xl transition-all duration-300 border border-white/40"
-            >
+            <Link href={`/interview/${sessionId}`} className="p-2 bg-white/20 backdrop-blur-sm hover:bg-white/30 rounded-xl border border-white/40">
               <ArrowLeft className="w-5 h-5 text-white" />
             </Link>
             <div>
@@ -877,17 +839,11 @@ const AskAgent = ({
             </div>
           </div>
           <div className="flex gap-2">
-            <button
-              onClick={() => setShowFinancial(!showFinancial)}
-              className="px-3 py-2 bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white rounded-xl flex items-center gap-2 border border-white/40 transition-all duration-300 text-sm"
-            >
+            <button onClick={() => setShowFinancial(!showFinancial)} className="px-3 py-2 bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white rounded-xl flex items-center gap-2 border border-white/40 text-sm">
               <DollarSign className="w-4 h-4" />
               {showFinancial ? safeT('hide_finance') : safeT('show_finance')}
             </button>
-            <button
-              onClick={() => setShowRecommendations(!showRecommendations)}
-              className="px-3 py-2 bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white rounded-xl flex items-center gap-2 border border-white/40 transition-all duration-300 text-sm"
-            >
+            <button onClick={() => setShowRecommendations(!showRecommendations)} className="px-3 py-2 bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white rounded-xl flex items-center gap-2 border border-white/40 text-sm">
               <Sparkles className="w-4 h-4" />
               {showRecommendations ? safeT('hide_tips') : safeT('view_tips')}
             </button>
@@ -938,82 +894,68 @@ const AskAgent = ({
 
       {/* Tab Navigation */}
       <div className="flex gap-2 justify-center">
-        <button
-          onClick={() => setActiveTab("chat")}
-          className={`px-4 py-2 rounded-full font-medium transition-all ${
-            activeTab === "chat"
-              ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
-              : 'bg-white/80 text-gray-600 hover:bg-white'
-          }`}
-        >
-          <MessageCircle className="w-4 h-4 inline mr-1" />
-          {safeT('chat')}
+        <button onClick={() => setActiveTab("chat")} className={`px-4 py-2 rounded-full font-medium transition-all ${activeTab === "chat" ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg' : 'bg-white/80 text-gray-600 hover:bg-white'}`}>
+          <MessageCircle className="w-4 h-4 inline mr-1" /> {safeT('chat')}
         </button>
-        <button
-          onClick={() => setActiveTab("financial")}
-          className={`px-4 py-2 rounded-full font-medium transition-all ${
-            activeTab === "financial"
-              ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-lg'
-              : 'bg-white/80 text-gray-600 hover:bg-white'
-          }`}
-        >
-          <DollarSign className="w-4 h-4 inline mr-1" />
-          {safeT('financial_qa')}
+        <button onClick={() => setActiveTab("financial")} className={`px-4 py-2 rounded-full font-medium transition-all ${activeTab === "financial" ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-lg' : 'bg-white/80 text-gray-600 hover:bg-white'}`}>
+          <DollarSign className="w-4 h-4 inline mr-1" /> {safeT('financial_qa')}
         </button>
-        <button
-          onClick={() => setActiveTab("summary")}
-          className={`px-4 py-2 rounded-full font-medium transition-all ${
-            activeTab === "summary"
-              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg'
-              : 'bg-white/80 text-gray-600 hover:bg-white'
-          }`}
-        >
-          <BarChart3 className="w-4 h-4 inline mr-1" />
-          {safeT('farm_summary')}
+        <button onClick={() => setActiveTab("summary")} className={`px-4 py-2 rounded-full font-medium transition-all ${activeTab === "summary" ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg' : 'bg-white/80 text-gray-600 hover:bg-white'}`}>
+          <BarChart3 className="w-4 h-4 inline mr-1" /> {safeT('farm_summary')}
         </button>
       </div>
 
       {/* Messages Area */}
       <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-5 shadow-xl border-2 border-emerald-200 min-h-[400px] max-h-[600px] overflow-y-auto">
         <div className="space-y-4">
-          {messages.map((msg, index) => (
-            <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-slide-in`}>
-              <div className={`max-w-[80%] rounded-2xl p-4 shadow-md ${
-                msg.role === 'user'
-                  ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-br-none'
-                  : msg.financial
-                    ? 'bg-gradient-to-r from-green-100 to-emerald-100 text-gray-800 border-2 border-green-300 rounded-bl-none'
-                    : 'bg-gradient-to-r from-amber-100 to-yellow-100 text-gray-800 border-2 border-yellow-300 rounded-bl-none'
-              }`}>
-                <div className="flex items-start gap-2">
-                  {msg.role === 'assistant' && (
-                    <div className="mt-1">
-                      {msg.financial ? <DollarSign className="w-4 h-4 text-green-600" /> : getRandomIcon()}
+          {messages.map((msg, index) => {
+            // Replace the current currency symbol with the display symbol for UI
+            let displayContent = msg.content;
+            const currentSymbol = currency.symbol;
+            const displaySymbol = getDisplaySymbol();
+            if (currentSymbol !== displaySymbol) {
+              const escapedSym = currentSymbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              displayContent = displayContent.replace(new RegExp(escapedSym, 'g'), displaySymbol);
+            }
+            // Also cleanup any leftover Ksh for safety
+            if (displaySymbol !== 'Ksh') {
+              displayContent = displayContent.replace(/Ksh/g, displaySymbol);
+            }
+            return (
+              <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-slide-in`}>
+                <div className={`max-w-[80%] rounded-2xl p-4 shadow-md ${
+                  msg.role === 'user'
+                    ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-br-none'
+                    : msg.financial
+                      ? 'bg-gradient-to-r from-green-100 to-emerald-100 text-gray-800 border-2 border-green-300 rounded-bl-none'
+                      : 'bg-gradient-to-r from-amber-100 to-yellow-100 text-gray-800 border-2 border-yellow-300 rounded-bl-none'
+                }`}>
+                  <div className="flex items-start gap-2">
+                    {msg.role === 'assistant' && (
+                      <div className="mt-1">
+                        {msg.financial ? <DollarSign className="w-4 h-4 text-green-600" /> : getRandomIcon()}
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <p className="text-sm whitespace-pre-wrap">{displayContent}</p>
+                      <p className={`text-xs mt-2 flex items-center gap-1 ${
+                        msg.role === 'user' ? 'text-blue-100' : msg.financial ? 'text-green-700' : 'text-amber-700'
+                      }`}>
+                        {new Date(msg.timestamp).toLocaleTimeString()}
+                        {msg.role === 'assistant' && msg.financial && (
+                          <span className="flex items-center gap-1">
+                            <DollarSign className="w-3 h-3" />
+                            <TrendingUp className="w-3 h-3" />
+                          </span>
+                        )}
+                      </p>
                     </div>
-                  )}
-                  <div className="flex-1">
-                    <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                    <p className={`text-xs mt-2 flex items-center gap-1 ${
-                      msg.role === 'user' ? 'text-blue-100' : msg.financial ? 'text-green-700' : 'text-amber-700'
-                    }`}>
-                      {new Date(msg.timestamp).toLocaleTimeString()}
-                      {msg.role === 'assistant' && msg.financial && (
-                        <span className="flex items-center gap-1">
-                          <DollarSign className="w-3 h-3" />
-                          <TrendingUp className="w-3 h-3" />
-                        </span>
-                      )}
-                    </p>
+                    {msg.role === 'user' && <ThumbsUp className="w-4 h-4 text-white/70 mt-1" />}
                   </div>
-                  {msg.role === 'user' && (
-                    <ThumbsUp className="w-4 h-4 text-white/70 mt-1" />
-                  )}
                 </div>
               </div>
-            </div>
-          ))}
-
-          {/* SYNCHRONIZED STREAMING */}
+            );
+          })}
           {isStreaming && streamingContent && (
             <div className="flex justify-start">
               <div className="max-w-[80%] rounded-2xl p-4 shadow-md bg-gradient-to-r from-yellow-300 to-amber-300 border-2 border-green-500 rounded-bl-none">
@@ -1030,9 +972,7 @@ const AskAgent = ({
               </div>
             </div>
           )}
-
           <div ref={messagesEndRef} />
-
           {isLoading && !isStreaming && (
             <div className="flex justify-start">
               <div className="bg-gradient-to-r from-purple-100 to-pink-100 rounded-2xl p-4 border-2 border-purple-300">
@@ -1041,8 +981,6 @@ const AskAgent = ({
             </div>
           )}
         </div>
-
-        {/* Business Tip */}
         <div className="mt-4 p-2 bg-yellow-50 rounded-lg border border-yellow-300">
           <p className="text-xs text-yellow-800 flex items-center gap-1">
             <Rocket className="w-3 h-3" />
@@ -1082,8 +1020,6 @@ const AskAgent = ({
             )}
           </button>
         </div>
-
-        {/* Voice button */}
         {voiceEnabled && (
           <div className="mt-3">
             <button
@@ -1129,7 +1065,6 @@ const AskAgent = ({
         )}
       </div>
 
-      {/* Offline Banner */}
       <OfflineBanner />
     </div>
   );

@@ -1,4 +1,4 @@
-// components/Agent.tsx - UPDATED with crop_benefits_grouped support
+// components/Agent.tsx - Fixed voice language for en-GB
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -50,6 +50,36 @@ const Agent = ({
   const { currency } = useCurrency();
   const [currentLang, setCurrentLang] = useState<string>('en');
 
+ const getDisplaySymbol = (): string => {
+  // Always use the actual currency symbol from the user's profile
+  return currency.symbol || 'Ksh';
+};
+
+  // Helper for spoken currency name (dynamic)
+  const getSpokenCurrencyName = (): string => {
+    // Spanish override: always say "Euros"
+    if (i18n.language === 'es') return 'Euros';
+
+    // For other languages, use the localized name from currency context
+    const lang = i18n.language;
+    switch (currency.code) {
+      case 'KES':
+        if (lang === 'fr') return 'Shillings kényans';
+        if (lang === 'sw') return 'Shilingi za Kenya';
+        return 'Kenyan Shillings';
+      case 'UGX':
+        if (lang === 'fr') return 'Shillings ougandais';
+        if (lang === 'sw') return 'Shilingi za Uganda';
+        return 'Ugandan Shillings';
+      case 'TZS':
+        if (lang === 'fr') return 'Shillings tanzaniens';
+        if (lang === 'sw') return 'Shilingi za Tanzania';
+        return 'Tanzanian Shillings';
+      default:
+        return currency.name;
+    }
+  };
+
   // Sync language from session data
   useEffect(() => {
     const sessionLang = sessionData?.language;
@@ -73,7 +103,7 @@ const Agent = ({
     }
   }, [sessionData]);
 
-  // Safe translation (still used for some UI elements)
+  // Safe translation
   const safeT = (key: string, params?: any): string => {
     try {
       if (key && (key.includes(' ') || key.includes('\n') || key.includes('.'))) {
@@ -122,22 +152,279 @@ const Agent = ({
   const fertilizerPlan = soilTest?.fertilizerPlan;
   const farmerName = sessionData?.farmerName || userName || "Farmer";
   const farmerCountry = sessionData?.country || 'kenya';
+  const cropName = sessionData?.crops?.[0] || '';
 
-  // Voice language uses UI language
+  // Helper to get GAP translation key from crop name (fallback)
+  const getGapKeyFromCrop = (crop: string): string => {
+    if (!crop) return 'gap_generic';
+    const cropLower = crop.toLowerCase().trim(); // trim to avoid spaces
+    const cropKeyMap: Record<string, string> = {
+      'banana': 'gap_bananas',
+      'bananas': 'gap_bananas',
+      'maize': 'gap_maize',
+      'beans': 'gap_beans',
+      'finger millet': 'gap_finger_millet',
+      'sorghum': 'gap_sorghum',
+      'onions': 'gap_onions',
+      'avocados': 'gap_avocados',
+      'avocado': 'gap_avocados',
+      'rice': 'gap_rice',
+      'mangoes': 'gap_mangoes',
+      'mango': 'gap_mangoes',
+      'pineapples': 'gap_pineapples',
+      'watermelons': 'gap_watermelons',
+      'carrots': 'gap_carrots',
+      'chillies': 'gap_chillies',
+      'spinach': 'gap_spinach',
+      'pigeonpeas': 'gap_pigeonpeas',
+      'bambaranuts': 'gap_bambaranuts',
+      'yams': 'gap_yams',
+      'taro': 'gap_taro',
+      'okra': 'gap_okra',
+      'tea': 'gap_tea',
+      'macadamia': 'gap_macadamia',
+      'cocoa': 'gap_cocoa',
+      'soya beans': 'gap_soya_beans',
+      'cowpeas': 'gap_cowpeas',
+      'green grams': 'gap_green_grams',
+      'groundnuts': 'gap_groundnuts',
+      'sunflower': 'gap_sunflower',
+      'simsim': 'gap_simsim',
+      'coffee': 'gap_coffee',
+      'cotton': 'gap_cotton',
+      'sugarcane': 'gap_sugarcane',
+      'tobacco': 'gap_tobacco',
+      'cassava': 'gap_cassava',
+      'sweet potatoes': 'gap_sweet_potatoes',
+      'irish potatoes': 'gap_irish_potatoes',
+      'tomatoes': 'gap_tomatoes',
+      'kales': 'gap_kales',
+      'cabbages': 'gap_cabbages',
+      'capsicums': 'gap_capsicums',
+      'brinjals': 'gap_brinjals',
+      'french beans': 'gap_french_beans',
+      'garden peas': 'gap_garden_peas',
+      'oranges': 'gap_oranges',
+      'pawpaws': 'gap_pawpaws',
+      'passion fruit': 'gap_passion_fruit',
+      'lemons': 'gap_lemons',
+      'limes': 'gap_limes',
+      'grapefruit': 'gap_grapefruit',
+      'guava': 'gap_guava',
+      'jackfruit': 'gap_jackfruit',
+      'breadfruit': 'gap_breadfruit',
+      'pomegranate': 'gap_pomegranate',
+      'star fruit': 'gap_star_fruit',
+      'coconut': 'gap_coconut',
+      'cashew': 'gap_cashew',
+      'fig': 'gap_fig',
+      'date palm': 'gap_date_palm',
+      'mulberry': 'gap_mulberry',
+      'lychee': 'gap_lychee',
+      'persimmon': 'gap_persimmon',
+      'gooseberry': 'gap_gooseberry',
+      'currant': 'gap_currant',
+      'elderberry': 'gap_elderberry',
+      'rambutan': 'gap_rambutan',
+      'durian': 'gap_durian',
+      'mangosteen': 'gap_mangosteen',
+      'longan': 'gap_longan',
+      'marula': 'gap_marula',
+      'vanilla': 'gap_vanilla',
+      'cardamom': 'gap_cardamom',
+      'cinnamon': 'gap_cinnamon',
+      'cloves': 'gap_cloves',
+      'black pepper': 'gap_black_pepper',
+      'lemon grass': 'gap_lemon_grass',
+      'rosemary': 'gap_rosemary',
+      'thyme': 'gap_thyme',
+      'parsley': 'gap_parsley',
+      'coriander': 'gap_coriander',
+      'cauliflower': 'gap_cauliflower',
+      'broccoli': 'gap_broccoli',
+      'leeks': 'gap_leeks',
+      'celery': 'gap_celery',
+      'lettuce': 'gap_lettuce',
+      'radish': 'gap_radish',
+      'beetroot': 'gap_beetroot',
+      'sisal': 'gap_sisal',
+      'bamboo': 'gap_bamboo',
+      'napier grass': 'gap_napier_grass',
+      'rhodes grass': 'gap_rhodes_grass',
+      'lucerne': 'gap_lucerne',
+      'aloe vera': 'gap_aloe_vera',
+      'hibiscus': 'gap_hibiscus',
+      'brachiaria': 'gap_brachiaria',
+      'guinea grass': 'gap_guinea_grass',
+      'buffel grass': 'gap_buffel_grass',
+      'napier hybrid': 'gap_napier_hybrid',
+      'oats': 'gap_oats',
+      'italian ryegrass': 'gap_italian_ryegrass',
+      'timothy grass': 'gap_timothy_grass',
+      'orchard grass': 'gap_orchard_grass',
+      'white clover': 'gap_white_clover',
+      'forage sorghum': 'gap_forage_sorghum',
+      'alfalfa': 'gap_alfalfa',
+      'almond': 'gap_almond',
+      'artichoke': 'gap_artichoke',
+      'arugula': 'gap_arugula',
+      'asparagus': 'gap_asparagus',
+      'barley': 'gap_barley',
+      'basil': 'gap_basil',
+      'birds eye chili': 'gap_birds_eye_chili',
+      'brazil nut': 'gap_brazil_nut',
+      'buckwheat': 'gap_buckwheat',
+      'cayenne': 'gap_cayenne',
+      'chamomile': 'gap_chamomile',
+      'chestnut': 'gap_chestnut',
+      'chickpea': 'gap_chickpea',
+      'clover': 'gap_clover',
+      'dill': 'gap_dill',
+      'echinacea': 'gap_echinacea',
+      'endive': 'gap_endive',
+      'escarole': 'gap_escarole',
+      'faba bean': 'gap_faba_bean',
+      'fennel': 'gap_fennel',
+      'fenugreek': 'gap_fenugreek',
+      'flax': 'gap_flax',
+      'fonio': 'gap_fonio',
+      'frisee': 'gap_frisee',
+      'ginseng': 'gap_ginseng',
+      'goldenseal': 'gap_goldenseal',
+      'hazelnut': 'gap_hazelnut',
+      'hemp': 'gap_hemp',
+      'hops': 'gap_hops',
+      'horseradish': 'gap_horseradish',
+      'jalapeno': 'gap_jalapeno',
+      'jute': 'gap_jute',
+      'kenaf': 'gap_kenaf',
+      'kohlrabi': 'gap_kohlrabi',
+      'lavender': 'gap_lavender',
+      'lentil': 'gap_lentil',
+      'mint': 'gap_mint',
+      'mushroom': 'gap_mushroom',
+      'mustard': 'gap_mustard',
+      'oil palm': 'gap_oil_palm',
+      'oregano': 'gap_oregano',
+      'parsnip': 'gap_parsnip',
+      'peanut': 'gap_peanut',
+      'pecan': 'gap_pecan',
+      'pistachio': 'gap_pistachio',
+      'potatoes': 'gap_potatoes',
+      'pumpkin': 'gap_pumpkin',
+      'quinoa': 'gap_quinoa',
+      'rapeseed': 'gap_rapeseed',
+      'rhubarb': 'gap_rhubarb',
+      'rubber': 'gap_rubber',
+      'rutabaga': 'gap_rutabaga',
+      'safflower': 'gap_safflower',
+      'sage': 'gap_sage',
+      'sesame': 'gap_sesame',
+      'shea': 'gap_shea',
+      'spelt': 'gap_spelt',
+      'stinging nettle': 'gap_stinging_nettle',
+      'swiss chard': 'gap_swiss_chard',
+      'tarragon': 'gap_tarragon',
+      'teff': 'gap_teff',
+      'triticale': 'gap_triticale',
+      'turnip': 'gap_turnip',
+      'turnip greens': 'gap_turnip_greens',
+      'valerian': 'gap_valerian',
+      'vetch': 'gap_vetch',
+      'walnut': 'gap_walnut',
+      'wasabi': 'gap_wasabi',
+      'watercress': 'gap_watercress',
+      'wheat': 'gap_wheat',
+      'shallots': 'gap_shallots',
+      'chives': 'gap_chives',
+      'garlic': 'gap_garlic',
+      'african nightshade': 'gap_african_nightshade',
+      'amaranth': 'gap_amaranth',
+      'spider plant': 'gap_spider_plant',
+      'pumpkin leaves': 'gap_pumpkin_leaves',
+      'jute mallow': 'gap_jute_mallow',
+      'ethiopian kale': 'gap_ethiopian_kale',
+      'slender leaf': 'gap_slender_leaf',
+      'oyster nut': 'gap_oyster_nut',
+      'mucuna': 'gap_mucuna',
+      'desmodium': 'gap_desmodium',
+      'dolichos': 'gap_dolichos',
+      'canavalia': 'gap_canavalia',
+      'sunn hemp': 'gap_sunn_hemp',
+      'crotalaria paulina': 'gap_crotalaria_paulina',
+      'moringa': 'gap_moringa',
+      'ginger': 'gap_ginger',
+      'turmeric': 'gap_turmeric',
+    };
+    return cropKeyMap[cropLower] || 'gap_generic';
+  };
+
+  // Voice language uses UI language - FIXED to handle en-GB properly
   const recognitionLanguage = (() => {
     const lang = i18n.language || 'en';
+    if (lang === 'en-GB') return 'en-GB';   // ← ADDED
     if (lang === 'en') return 'en-US';
     if (lang === 'fr') return 'fr-FR';
     if (lang === 'sw') return 'sw-KE';
+    if (lang === 'es') return 'es-ES';
     return 'en-US';
   })();
 
   console.log(`🎤 Voice language set to: ${recognitionLanguage} (UI language: ${i18n.language})`);
 
-  // Helper to get best available voice
+  // ========== ENHANCED VOICE SELECTION (UK/US SEPARATED, FEMALE-ONLY) ==========
   const getBestVoice = () => {
     const voices = window.speechSynthesis.getVoices();
     console.log(`Looking for voice for language: ${recognitionLanguage}`);
+
+    // Helper for UK female voices (en-GB)
+    const findBritishEnglishFemale = (): SpeechSynthesisVoice | null => {
+      const femaleNames = [
+        'libby', 'hazel', 'susan', 'maisie', 'sonia', 'kate', 'victoria', 'millie', 'olivia',
+        'google uk english female', 'microsoft libby', 'microsoft hazel', 'microsoft susan',
+        'microsoft maisie', 'microsoft sonia', 'british english female', 'uk english female'
+      ];
+      for (const name of femaleNames) {
+        const voice = voices.find(v => v.lang === 'en-GB' && v.name.toLowerCase().includes(name));
+        if (voice) {
+          console.log(`✅ Found British female voice: ${voice.name} (${voice.lang})`);
+          return voice;
+        }
+      }
+      const maleIndicators = ['george', 'ryan', 'thomas', 'david', 'mark', 'james', 'john', 'paul', 'michael'];
+      const anyBritishFemale = voices.find(v => v.lang === 'en-GB' && !maleIndicators.some(m => v.name.toLowerCase().includes(m)));
+      if (anyBritishFemale) {
+        console.log(`⚠️ Using non-male British voice: ${anyBritishFemale.name}`);
+        return anyBritishFemale;
+      }
+      const anyBritish = voices.find(v => v.lang === 'en-GB');
+      if (anyBritish) console.log(`⚠️ Falling back to any British voice: ${anyBritish.name}`);
+      return anyBritish || null;
+    };
+
+    // Helper for US female voices (en-US)
+    const findAmericanEnglishFemale = (): SpeechSynthesisVoice | null => {
+      const femaleNames = [
+        'samantha', 'victoria', 'zira', 'jenny', 'aria', 'google us english female',
+        'microsoft jenny', 'microsoft zira', 'microsoft aria', 'us english female'
+      ];
+      for (const name of femaleNames) {
+        const voice = voices.find(v => v.lang === 'en-US' && v.name.toLowerCase().includes(name));
+        if (voice) {
+          console.log(`✅ Found US female voice: ${voice.name} (${voice.lang})`);
+          return voice;
+        }
+      }
+      const maleIndicators = ['david', 'mark', 'james', 'john', 'paul', 'michael', 'alex', 'thomas'];
+      const anyFemale = voices.find(v => v.lang === 'en-US' && !maleIndicators.some(m => v.name.toLowerCase().includes(m)));
+      if (anyFemale) {
+        console.log(`⚠️ Using non-male US voice: ${anyFemale.name}`);
+        return anyFemale;
+      }
+      const anyUS = voices.find(v => v.lang === 'en-US');
+      if (anyUS) console.log(`⚠️ Falling back to any US voice: ${anyUS.name}`);
+      return anyUS || null;
+    };
 
     const findFrenchVoice = (): SpeechSynthesisVoice | null => {
       let vivienne = voices.find(v => v.lang.startsWith('fr') && v.name.toLowerCase().includes('vivienne'));
@@ -152,52 +439,102 @@ const Agent = ({
       return anyFrench || null;
     };
 
-    if (recognitionLanguage === 'fr-FR' || recognitionLanguage === 'fr-CA' || recognitionLanguage.startsWith('fr')) {
-      const frenchVoice = findFrenchVoice();
-      if (frenchVoice) {
-        return { voice: frenchVoice, language: 'fr-FR' };
-      } else {
-        console.warn('No French voice found, falling back to English');
+    const findSpanishVoice = (): SpeechSynthesisVoice | null => {
+      const femaleNames = [
+        'elena', 'ximena', 'maria', 'paloma', 'sofia', 'catalina', 'salome', 'belkys',
+        'ramona', 'andrea', 'lorena', 'teresa', 'marta', 'karla', 'dalia', 'yolanda',
+        'margarita', 'tania', 'camila', 'karina', 'elvira', 'valentina', 'paola',
+        'michelle', 'gabriela', 'lucia', 'laura', 'fernanda', 'victoria', 'monica',
+        'paulina', 'sabina', 'helena', 'florencia'
+      ];
+      for (const name of femaleNames) {
+        const voice = voices.find(v =>
+          v.lang.startsWith('es') &&
+          v.name.toLowerCase().includes(name)
+        );
+        if (voice) {
+          console.log(`✅ Found female Spanish voice: ${voice.name} (${voice.lang})`);
+          return voice;
+        }
       }
-    }
+      const nonMale = voices.find(v =>
+        v.lang.startsWith('es') &&
+        !v.name.toLowerCase().includes('alvaro') &&
+        !v.name.toLowerCase().includes('jorge') &&
+        !v.name.toLowerCase().includes('manuel') &&
+        !v.name.toLowerCase().includes('andres') &&
+        !v.name.toLowerCase().includes('carlos') &&
+        !v.name.toLowerCase().includes('juan') &&
+        !v.name.toLowerCase().includes('luis') &&
+        !v.name.toLowerCase().includes('rodrigo') &&
+        !v.name.toLowerCase().includes('javier')
+      );
+      if (nonMale) {
+        console.log(`⚠️ No exact female Spanish voice, using fallback: ${nonMale.name}`);
+        return nonMale;
+      }
+      console.warn('❌ No female Spanish voice found – falling back to English');
+      return null;
+    };
 
-    if (recognitionLanguage === 'sw-KE' || recognitionLanguage === 'sw-TZ' || recognitionLanguage.startsWith('sw')) {
+    const findSwahiliVoice = (): SpeechSynthesisVoice | null => {
       let swahiliVoices = voices.filter(v =>
         v.lang === 'sw-KE' &&
         (v.name.includes('Rafiki') || v.name.includes('Zuri') || v.name.includes('Aisha') || v.name.includes('Kenya'))
       );
       if (swahiliVoices.length > 0) {
         console.log(`✅ Swahili voice found: ${swahiliVoices[0].name}`);
-        return { voice: swahiliVoices[0], language: 'sw-KE' };
+        return swahiliVoices[0];
       }
       swahiliVoices = voices.filter(v => v.lang === 'sw-KE');
       if (swahiliVoices.length > 0) {
         console.log(`✅ Swahili voice (any) found: ${swahiliVoices[0].name}`);
-        return { voice: swahiliVoices[0], language: 'sw-KE' };
+        return swahiliVoices[0];
       }
       console.warn('No Swahili voice found, falling back to English');
+      return null;
+    };
+
+    // --- Language-specific selection ---
+    if (recognitionLanguage === 'en-GB') {
+      const britishVoice = findBritishEnglishFemale();
+      if (britishVoice) return { voice: britishVoice, language: 'en-GB' };
+      // Fallback to any non-male English voice
+      const anyNonMale = voices.find(v => v.lang.startsWith('en') && !v.name.toLowerCase().includes('male'));
+      if (anyNonMale) return { voice: anyNonMale, language: 'en-GB' };
     }
 
-    if (recognitionLanguage === 'en-US' || recognitionLanguage.startsWith('en')) {
-      const englishVoices = voices.filter(v =>
-        v.lang === 'en-US' &&
-        (v.name.includes('Samantha') || v.name.includes('Victoria') ||
-         v.name.includes('Google UK English Female') || v.name.includes('Microsoft Jenny') ||
-         v.name.includes('Zira'))
-      );
-      if (englishVoices.length > 0) {
-        console.log(`✅ English female voice found: ${englishVoices[0].name}`);
-        return { voice: englishVoices[0], language: 'en-US' };
-      }
-      const anyEnglish = voices.find(v => v.lang.startsWith('en'));
-      if (anyEnglish) {
-        console.log(`⚠️ Using any English voice: ${anyEnglish.name}`);
-        return { voice: anyEnglish, language: 'en-US' };
-      }
+    if (recognitionLanguage === 'en-US') {
+      const usVoice = findAmericanEnglishFemale();
+      if (usVoice) return { voice: usVoice, language: 'en-US' };
+      const anyNonMale = voices.find(v => v.lang.startsWith('en') && !v.name.toLowerCase().includes('male'));
+      if (anyNonMale) return { voice: anyNonMale, language: 'en-US' };
     }
 
-    console.log('⚠️ Using default voice');
-    return { voice: null, language: 'en-US' };
+    if (recognitionLanguage === 'fr-FR' || recognitionLanguage === 'fr-CA' || recognitionLanguage.startsWith('fr')) {
+      const frenchVoice = findFrenchVoice();
+      if (frenchVoice) return { voice: frenchVoice, language: 'fr-FR' };
+      console.warn('No French voice found, falling back to Spanish');
+    }
+
+    if (recognitionLanguage === 'es-ES' || recognitionLanguage.startsWith('es')) {
+      const spanishVoice = findSpanishVoice();
+      if (spanishVoice) return { voice: spanishVoice, language: 'es-ES' };
+      console.warn('No female Spanish voice, falling back to Swahili');
+    }
+
+    if (recognitionLanguage === 'sw-KE' || recognitionLanguage === 'sw-TZ' || recognitionLanguage.startsWith('sw')) {
+      const swahiliVoice = findSwahiliVoice();
+      if (swahiliVoice) return { voice: swahiliVoice, language: 'sw-KE' };
+      console.warn('No Swahili voice, falling back to English');
+    }
+
+    // Ultimate fallback: any English voice (non‑male preferred) or null to let browser choose
+    const anyEnglish = voices.find(v => v.lang.startsWith('en') && !v.name.toLowerCase().includes('male'));
+    if (anyEnglish) return { voice: anyEnglish, language: 'en-GB' };
+    if (voices.length > 0) return { voice: voices[0], language: 'en-GB' };
+    console.log('⚠️ Using default voice (browser will choose)');
+    return { voice: null, language: 'en-GB' };
   };
 
   const waitForVoices = (maxAttempts = 5): Promise<void> => {
@@ -284,15 +621,6 @@ const Agent = ({
     );
   }
 
-  const getCurrencyName = () => {
-    switch(currency.code) {
-      case 'KES': return 'Kenyan Shillings';
-      case 'UGX': return 'Ugandan Shillings';
-      case 'TZS': return 'Tanzanian Shillings';
-      default: return currency.name;
-    }
-  };
-
   const cleanText = (text: string): string => {
     return text
       .replace(/[\u{1F600}-\u{1F64F}]/gu, '')
@@ -309,11 +637,22 @@ const Agent = ({
       .trim();
   };
 
+  // Prepare text for speech: replace every occurrence of the current currency symbol with its spoken name
   const prepareForSpeech = (text: string): string => {
     let speechText = cleanText(text);
+    const currencyName = getSpokenCurrencyName();
+    const symbol = currency.symbol;
+    const escapedSymbol = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    speechText = speechText.replace(new RegExp(`${escapedSymbol}\\s`, 'g'), `${currencyName} `);
+    speechText = speechText.replace(new RegExp(`\\b${escapedSymbol}\\b`, 'g'), currencyName);
+    // Also replace common East African symbols for safety
     speechText = speechText
-      .replace(/Ksh\s/g, 'Kenyan Shillings ')
-      .replace(/Ksh\b/g, 'Kenyan Shillings');
+      .replace(/Ksh\s/g, `${currencyName} `)
+      .replace(/Ksh\b/g, currencyName)
+      .replace(/USh\s/g, `${currencyName} `)
+      .replace(/USh\b/g, currencyName)
+      .replace(/TSh\s/g, `${currencyName} `)
+      .replace(/TSh\b/g, currencyName);
 
     nameUsageCountRef.current++;
     const useName = nameUsageCountRef.current % 3 === 0;
@@ -325,7 +664,7 @@ const Agent = ({
   };
 
   // Karaoke streaming function
-  const streamRecommendationKaraoke = async (recommendation: string, index: number) => {
+  const streamRecommendationKaraoke = async (rawRecommendation: string, index: number) => {
     if (!voiceEnabled || !window.speechSynthesis) return;
 
     if (!voicesLoaded) {
@@ -338,17 +677,18 @@ const Agent = ({
         await new Promise(resolve => setTimeout(resolve, 200));
       }
 
-      setActiveStreamingRec(index);
-      const allWords = recommendation.split(' ');
+      const speechText = prepareForSpeech(rawRecommendation);
+      const allWords = speechText.split(' ');
       recWordsRef.current[index] = allWords;
+
+      setActiveStreamingRec(index);
+      setRecommendationStreams(prev => ({ ...prev, [index]: "" }));
 
       const maxChunkWords = 250;
       const chunks = [];
       for (let i = 0; i < allWords.length; i += maxChunkWords) {
         chunks.push(allWords.slice(i, i + maxChunkWords).join(' '));
       }
-
-      setRecommendationStreams(prev => ({ ...prev, [index]: "" }));
 
       let cumulativeText = '';
 
@@ -384,24 +724,29 @@ const Agent = ({
         await new Promise(resolve => setTimeout(resolve, 150));
       }
 
-      setRecommendationStreams(prev => ({ ...prev, [index]: recommendation }));
+      setRecommendationStreams(prev => ({ ...prev, [index]: speechText }));
       setReadRecommendations(prev => new Set(prev).add(index));
       setActiveStreamingRec(null);
       currentUtteranceRef.current = null;
 
     } catch (error) {
       console.error('Error in streamRecommendationKaraoke:', error);
-      setRecommendationStreams(prev => ({ ...prev, [index]: recommendation }));
+      setRecommendationStreams(prev => ({ ...prev, [index]: rawRecommendation }));
       setReadRecommendations(prev => new Set(prev).add(index));
       setActiveStreamingRec(null);
     }
   };
 
   const speakWithVoice = async (text: string): Promise<void> => {
-    return new Promise((resolve) => {
+    return new Promise(async (resolve) => {
       if (!window.speechSynthesis) {
         resolve();
         return;
+      }
+
+      // Wait for voices to load if not already loaded
+      if (!voicesLoaded) {
+        await waitForVoices();
       }
 
       if (window.speechSynthesis.speaking) {
@@ -409,13 +754,14 @@ const Agent = ({
       }
 
       setTimeout(() => {
-        const utterance = new SpeechSynthesisUtterance(text);
+        const speechText = prepareForSpeech(text);
+        const utterance = new SpeechSynthesisUtterance(speechText);
         utterance.rate = 0.9;
         utterance.pitch = 1.1;
         utterance.volume = 1.0;
 
         const { voice, language } = getBestVoice();
-        if (voice) utterance.voice = voice;
+        utterance.voice = voice;   // May be null → browser default
         utterance.lang = language;
 
         console.log(`🔊 Speaking with voice: ${utterance.voice?.name || 'default'} (${utterance.lang})`);
@@ -433,32 +779,15 @@ const Agent = ({
           console.error("Speech error with", utterance.voice?.name, ":", event);
           if (!resolved) {
             resolved = true;
-            if (language !== 'en-US') {
-              console.log(`⚠️ Voice for ${language} failed, retrying with English...`);
-              const englishUtterance = new SpeechSynthesisUtterance(text);
-              englishUtterance.rate = 0.9;
-              englishUtterance.pitch = 1.1;
-              englishUtterance.volume = 1.0;
-              englishUtterance.lang = 'en-US';
-
-              const englishVoices = window.speechSynthesis.getVoices().filter(v =>
-                v.lang === 'en-US' &&
-                (v.name.includes('Samantha') || v.name.includes('Victoria') ||
-                 v.name.includes('Google UK English Female') || v.name.includes('Microsoft Jenny'))
-              );
-              if (englishVoices.length > 0) englishUtterance.voice = englishVoices[0];
-
-              englishUtterance.onend = () => resolve();
-              englishUtterance.onerror = () => resolve();
-              window.speechSynthesis.speak(englishUtterance);
-            } else {
-              resolve();
-            }
+            // Retry with no voice (browser default) – do not fallback to English again
+            utterance.voice = null;
+            window.speechSynthesis.speak(utterance);
           }
         };
 
         window.speechSynthesis.speak(utterance);
 
+        // Safety timeout
         setTimeout(() => {
           if (!resolved) {
             resolved = true;
@@ -475,7 +804,7 @@ const Agent = ({
     setRecommendationsSpoken(true);
     nameUsageCountRef.current = 0;
 
-    const currencyName = getCurrencyName();
+    const currencyName = getSpokenCurrencyName();
 
     let introMessage = safeT('prepared_recommendations', 'I\'ve prepared personalized recommendations for your farm enterprise. ');
     if (hasSoilTest && fertilizerPlan?.totalCost) {
@@ -498,7 +827,11 @@ const Agent = ({
       } else if (item.key === 'gap_grouped') {
         const parts = [];
         if (item.params?.title) parts.push(item.params.title);
-        const gapKey = item.params?.gapKey;
+        let gapKey = item.params?.gapKey;
+        if (!gapKey && cropName) {
+          gapKey = getGapKeyFromCrop(cropName);
+          console.log(`🔧 GAP fallback: using gap key "${gapKey}" for crop "${cropName}"`);
+        }
         if (gapKey) parts.push(safeT(gapKey, {}));
         if (item.params?.remember) parts.push(item.params.remember);
         content = parts.join('\n\n');
@@ -522,7 +855,7 @@ const Agent = ({
         if (p.business) parts.push(p.business);
         if (p.yearly) parts.push(p.yearly);
         content = parts.join('\n\n');
-      } else if (item.key === 'crop_benefits_grouped') { // NEW: handle crop benefits
+      } else if (item.key === 'crop_benefits_grouped') {
         const p = item.params;
         const parts = [];
         if (p.title) parts.push(p.title);
@@ -617,12 +950,12 @@ const Agent = ({
   const getStartButtonText = () => {
     if (isLoading) return safeT('starting');
     if (voiceInitializing) return safeT('initializing');
-    if (!hasPaid) return safeT('pay_to_start', { symbol: currency.symbol, amount: 3 });
+    if (!hasPaid) return safeT('pay_to_start', { symbol: getDisplaySymbol(), amount: 3 });
     if (!voiceEnabled) return "Turn Voice ON First";
     return safeT('start_voice_session');
   };
 
-  // Render function – now includes crop_benefits_grouped
+  // Render recommendation text with proper symbol replacement for UI
   const renderRecommendationText = (item: StructuredItem, idx: number) => {
     let displayContent = '';
     if (item.params?.content) {
@@ -630,7 +963,11 @@ const Agent = ({
     } else if (item.key === 'gap_grouped') {
       const parts = [];
       if (item.params?.title) parts.push(item.params.title);
-      const gapKey = item.params?.gapKey;
+      let gapKey = item.params?.gapKey;
+      if (!gapKey && cropName) {
+        gapKey = getGapKeyFromCrop(cropName);
+        console.log(`🔧 GAP fallback (render): using gap key "${gapKey}" for crop "${cropName}"`);
+      }
       if (gapKey) parts.push(safeT(gapKey, {}));
       if (item.params?.remember) parts.push(item.params.remember);
       displayContent = parts.join('\n\n');
@@ -654,7 +991,7 @@ const Agent = ({
       if (p.business) parts.push(p.business);
       if (p.yearly) parts.push(p.yearly);
       displayContent = parts.join('\n\n');
-    } else if (item.key === 'crop_benefits_grouped') { // NEW: handle crop benefits display
+    } else if (item.key === 'crop_benefits_grouped') {
       const p = item.params;
       const parts = [];
       if (p.title) parts.push(p.title);
@@ -672,12 +1009,20 @@ const Agent = ({
     const isActive = activeStreamingRec === idx;
     const isRead = readRecommendations.has(idx);
 
-    // Show only when streaming or read
     if (!isActive && !isRead) {
       return null;
     }
 
-    const finalText = isActive ? (streamingText || "") : displayContent;
+    let finalText = isActive ? (streamingText || "") : displayContent;
+    const displaySymbol = getDisplaySymbol();
+    const originalSymbol = currency.symbol;
+    if (displaySymbol !== originalSymbol) {
+      const escapedOrig = originalSymbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      finalText = finalText.replace(new RegExp(escapedOrig, 'g'), displaySymbol);
+    }
+    if (displaySymbol !== 'Ksh') {
+      finalText = finalText.replace(/Ksh/g, displaySymbol);
+    }
 
     return (
       <div
@@ -734,11 +1079,11 @@ const Agent = ({
                 <div className="mt-1">
                   {hasPaid ? (
                     <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                      {safeT('payment_verified', { symbol: currency.symbol, amount: 3 })}
+                      {safeT('payment_verified', { symbol: getDisplaySymbol(), amount: 3 })}
                     </span>
                   ) : (
                     <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-                      {safeT('payment_required', { symbol: currency.symbol, amount: 3 })}
+                      {safeT('payment_required', { symbol: getDisplaySymbol(), amount: 3 })}
                     </span>
                   )}
                 </div>

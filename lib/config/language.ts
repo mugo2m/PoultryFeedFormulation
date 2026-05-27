@@ -9,15 +9,15 @@ export interface CountryLanguage {
 
 export const COUNTRY_LANGUAGE_MAP: Record<string, CountryLanguage> = {
   // ===== EAST AFRICA =====
-  kenya: { code: 'sw-KE', name: 'Swahili', ttsSupported: true },
-  uganda: { code: 'sw-KE', name: 'Swahili', ttsSupported: true },
-  tanzania: { code: 'sw-KE', name: 'Swahili', ttsSupported: true },
+  kenya: { code: 'en-GB', name: 'English (UK)', ttsSupported: true },  // CHANGED: Kenya uses British English
+  uganda: { code: 'en-GB', name: 'English (UK)', ttsSupported: true }, // CHANGED
+  tanzania: { code: 'en-GB', name: 'English (UK)', ttsSupported: true }, // CHANGED
   rwanda: { code: 'fr-FR', name: 'French', ttsSupported: true },
   burundi: { code: 'fr-FR', name: 'French', ttsSupported: true },
   ethiopia: { code: 'am-ET', name: 'Amharic', ttsSupported: true },
 
   // ===== WEST AFRICA =====
-  nigeria: { code: 'en-NG', name: 'English (Nigeria)', ttsSupported: true },
+  nigeria: { code: 'en-GB', name: 'English (UK)', ttsSupported: true }, // CHANGED: Nigeria uses British English
   benin: { code: 'fr-FR', name: 'French', ttsSupported: true },
   burkina_faso: { code: 'fr-FR', name: 'French', ttsSupported: true },
   cameroon: { code: 'fr-FR', name: 'French', ttsSupported: true },
@@ -67,7 +67,7 @@ export const COUNTRY_LANGUAGE_MAP: Record<string, CountryLanguage> = {
   uk: { code: 'en-GB', name: 'English (UK)', ttsSupported: true },
 
   // ===== NORTH AMERICA =====
-  canada: { code: 'fr-CA', name: 'French (Canada)', ttsSupported: true },
+  canada: { code: 'en-US', name: 'English (US)', ttsSupported: true }, // Canada uses US English voice
   haiti: { code: 'fr-FR', name: 'French', ttsSupported: true },
   usa: { code: 'en-US', name: 'English (US)', ttsSupported: true },
 
@@ -81,7 +81,7 @@ export const COUNTRY_LANGUAGE_MAP: Record<string, CountryLanguage> = {
   new_caledonia: { code: 'fr-FR', name: 'French', ttsSupported: true },
 
   // ===== SOUTH ASIA =====
-  india: { code: 'hi-IN', name: 'Hindi', ttsSupported: true },
+  india: { code: 'en-GB', name: 'English (UK)', ttsSupported: true }, // India uses British English
   pakistan: { code: 'ur-PK', name: 'Urdu', ttsSupported: true },
   bangladesh: { code: 'bn-BD', name: 'Bengali', ttsSupported: true },
 
@@ -108,11 +108,11 @@ export const COUNTRY_LANGUAGE_MAP: Record<string, CountryLanguage> = {
   bahrain: { code: 'ar-BH', name: 'Arabic (Bahrain)', ttsSupported: true },
 
   // ===== WESTERN COUNTRIES =====
-  australia: { code: 'en-AU', name: 'English (Australia)', ttsSupported: true }
+  australia: { code: 'en-GB', name: 'English (UK)', ttsSupported: true } // Australia uses British English
 };
 
 // Default language if country not found
-export const DEFAULT_LANGUAGE = 'en-US';
+export const DEFAULT_LANGUAGE = 'en-GB'; // CHANGED: Default to British English
 
 // Helper function to get language code from country
 export function getLanguageFromCountry(country: string): string {
@@ -121,40 +121,31 @@ export function getLanguageFromCountry(country: string): string {
 
 // Helper function to get language name from country
 export function getLanguageNameFromCountry(country: string): string {
-  return COUNTRY_LANGUAGE_MAP[country]?.name || 'English (US)';
+  return COUNTRY_LANGUAGE_MAP[country]?.name || 'English (UK)';
 }
 
-// Language options for the language bar - URDU REMOVED
+// Language options for the language bar - UPDATED with TWO English options
 export const LANGUAGE_OPTIONS = [
-  // Original 4
-  { code: 'en', label: '🇬🇧 ENGLISH', flag: '🇬🇧', name: 'English' },
+  // ===== ENGLISH OPTIONS (SPLIT INTO TWO) =====
+  { code: 'en-GB', label: '🇬🇧 ENGLISH (UK)', flag: '🇬🇧', name: 'English (UK)' },
+  { code: 'en-US', label: '🇺🇸 ENGLISH (US)', flag: '🇺🇸', name: 'English (US)' },
+
+  // Other languages
   { code: 'fr', label: '🇫🇷 FRANÇAIS', flag: '🇫🇷', name: 'Français' },
   { code: 'es', label: '🇪🇸 ESPAÑOL', flag: '🇪🇸', name: 'Español' },
   { code: 'sw', label: '🇰🇪 KISWAHILI', flag: '🇰🇪', name: 'Kiswahili' },
-
-  // Hindi, Chinese, Arabic
   { code: 'hi', label: '🇮🇳 हिन्दी', flag: '🇮🇳', name: 'Hindi' },
   { code: 'zh', label: '🇨🇳 中文', flag: '🇨🇳', name: 'Chinese' },
   { code: 'ar', label: '🇸🇦 العربية', flag: '🇸🇦', name: 'Arabic' },
-
-  // Portuguese, Russian
   { code: 'pt', label: '🇵🇹 PORTUGUÊS', flag: '🇵🇹', name: 'Portuguese' },
   { code: 'ru', label: '🇷🇺 РУССКИЙ', flag: '🇷🇺', name: 'Russian' },
-
-  // German, Italian, Dutch, Greek
   { code: 'de', label: '🇩🇪 DEUTSCH', flag: '🇩🇪', name: 'German' },
   { code: 'it', label: '🇮🇹 ITALIANO', flag: '🇮🇹', name: 'Italian' },
   { code: 'nl', label: '🇳🇱 NEDERLANDS', flag: '🇳🇱', name: 'Dutch' },
   { code: 'el', label: '🇬🇷 ΕΛΛΗΝΙΚΑ', flag: '🇬🇷', name: 'Greek' },
-
-  // Thai, Vietnamese, Indonesian
   { code: 'th', label: '🇹🇭 ภาษาไทย', flag: '🇹🇭', name: 'Thai' },
   { code: 'vi', label: '🇻🇳 TIẾNG VIỆT', flag: '🇻🇳', name: 'Vietnamese' },
   { code: 'id', label: '🇮🇩 BAHASA INDONESIA', flag: '🇮🇩', name: 'Indonesian' },
-
-  // Amharic
   { code: 'am', label: '🇪🇹 አማርኛ', flag: '🇪🇹', name: 'Amharic' },
-
-  // Bengali (Urdu removed)
   { code: 'bn', label: '🇧🇩 বাংলা', flag: '🇧🇩', name: 'Bengali' }
 ];

@@ -8,17 +8,19 @@ export const initI18nextServer = async (lng: string) => {
   // DEBUG: Log the incoming language
   console.log(`🔍 Server initI18nextServer called with lng: "${lng}" (type: ${typeof lng}, length: ${lng?.length})`);
 
-  // Validate lng - ensure it's a 2-letter code
+  // Validate lng - allow 2-letter OR 5-letter codes (e.g., 'en', 'en-US', 'en-GB')
   let validLng = lng;
-  if (!lng || typeof lng !== 'string' || lng.length !== 2) {
-    console.error(`❌ Server invalid language code detected: "${lng}", falling back to 'en'`);
-    validLng = 'en';
+  const isValidLength = lng && typeof lng === 'string' && (lng.length === 2 || lng.length === 5);
+
+  if (!isValidLength) {
+    console.error(`❌ Server invalid language code detected: "${lng}", falling back to 'en-US'`);
+    validLng = 'en-US';
   }
 
   // Check for the mysterious 'V'
   if (validLng === 'V') {
     console.error(`🔥 Server found the mysterious 'V' language! This should not happen.`);
-    validLng = 'en';
+    validLng = 'en-US';
   }
 
   const i18nInstance = createInstance();
@@ -28,33 +30,25 @@ export const initI18nextServer = async (lng: string) => {
       // DEBUG: Log each language being loaded on server
       console.log(`📚 Server loading locale: "${language}/${namespace}.json"`);
 
-      // Validate language before import
-      let safeLanguage = language;
-      if (!language || typeof language !== 'string' || language.length !== 2) {
-        console.error(`❌ Server invalid language in resourcesToBackend: "${language}", falling back to 'en'`);
-        safeLanguage = 'en';
-      }
+      // Handle 5-letter codes - they become folder names
+      let folderPath = language;
 
-      // First try: requested language with requested namespace
-      return import(`../../locales/${safeLanguage}/${namespace}.json`)
+      // First try: exact match for the language folder (supports en-US, en-GB)
+      return import(`@/public/locales/${folderPath}/${namespace}.json`)
         .catch(() => {
-          // Second try: requested language with 'common' namespace (your actual files)
-          return import(`../../locales/${safeLanguage}/common.json`)
+          // Second try: fallback to common.json in the same language folder
+          return import(`@/public/locales/${folderPath}/common.json`)
             .catch(() => {
-              // Final fallback: English with 'common' namespace
-              console.log(`⚠️ Server falling back to en/common.json for ${safeLanguage}/${namespace}`);
-              return import(`../../locales/en/common.json`);
+              // Final fallback: US English common.json
+              console.log(`⚠️ Server falling back to en-US/common.json for ${language}/${namespace}`);
+              return import(`@/public/locales/en-US/common.json`);
             });
         });
     }))
     .init({
       lng: validLng,
-      fallbackLng: 'en',
-      supportedLngs: [
-        'en', 'fr', 'es', 'sw', 'hi', 'zh', 'ar',
-        'pt', 'ru', 'de', 'it', 'nl', 'el',
-        'th', 'vi', 'id', 'am', 'bn'
-      ],
+      fallbackLng: 'en-US',
+      supportedLngs: ['en-US', 'en-GB', 'fr', 'es', 'sw'],
       defaultNS: 'common',
       fallbackNS: 'common',
       interpolation: {
@@ -73,12 +67,13 @@ export async function getTranslations(namespace: string = 'common') {
   const preferredLangCookie = cookieStore.get('preferred-language');
   console.log('🍪 preferred-language cookie:', preferredLangCookie);
 
-  const language = preferredLangCookie?.value || 'en';
+  let language = preferredLangCookie?.value || 'en-US';
   console.log(`🔤 getTranslations - using language: "${language}", namespace: "${namespace}"`);
 
-  // Validate language
-  if (language.length !== 2) {
+  // Allow both 2-letter and 5-letter codes
+  if (language.length !== 2 && language.length !== 5) {
     console.error(`❌ getTranslations - invalid language length: "${language}" (length: ${language.length})`);
+    language = 'en-US';
   }
 
   const i18n = await initI18nextServer(language);

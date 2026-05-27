@@ -6,10 +6,10 @@ import { useTranslation } from "react-i18next";
 import { Globe } from "lucide-react";
 
 const languages = [
-  { code: 'en', name: 'English', flag: '🇬🇧' },
+  { code: 'en-US', name: 'English (US)', flag: '🇺🇸' },
+  { code: 'en-GB', name: 'English (UK)', flag: '🇬🇧' },
   { code: 'fr', name: 'Français', flag: '🇫🇷' },
   { code: 'sw', name: 'Kiswahili', flag: '🇰🇪' },
-
 ];
 
 export default function LanguageSelector() {
@@ -20,7 +20,10 @@ export default function LanguageSelector() {
 
   const changeLanguage = (langCode: string) => {
     localStorage.setItem('preferred-language', langCode);
-    window.location.reload();
+    // Change i18n language directly instead of reloading
+    i18n.changeLanguage(langCode);
+    // Close dropdown
+    setIsOpen(false);
   };
 
   return (

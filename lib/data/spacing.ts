@@ -128,26 +128,31 @@ export const cropSpacingOptions: Record<string, SpacingOption[]> = {
   ],
 
   "carrots": [
-    {
-      label: "30cm rows x 5cm between plants - Standard",
-      rowCm: 30, plantCm: 5, seedsPerHole: 1,
-      plantsPerAcre: calculatePlantsPerAcre(30, 5, 1),
-      description: "Thin to 5cm, 100,000 plants/acre"
-    },
-    {
-      label: "30cm rows x 8cm between plants - Wide spacing",
-      rowCm: 30, plantCm: 8, seedsPerHole: 1,
-      plantsPerAcre: calculatePlantsPerAcre(30, 8, 1),
-      description: "For larger carrots, 67,000 plants/acre"
-    },
-    {
-      label: "Broadcast seeding - Drilled",
-      rowCm: 20, plantCm: 5, seedsPerHole: 1,
-      plantsPerAcre: calculatePlantsPerAcre(20, 5, 1),
-      description: "Broadcast and thin to 5cm"
-    }
-  ],
-
+  {
+    label: "30cm rows x 5cm between plants - High density (baby carrots)",
+    rowCm: 30, plantCm: 5, seedsPerHole: 1,
+    plantsPerAcre: calculatePlantsPerAcre(30, 5, 1),
+    description: "Thin to 5cm → 270,000 plants/acre, for baby carrots"
+  },
+  {
+    label: "30cm rows x 8cm between plants - Medium density (small carrots)",
+    rowCm: 30, plantCm: 8, seedsPerHole: 1,
+    plantsPerAcre: calculatePlantsPerAcre(30, 8, 1),
+    description: "Thin to 8cm → 168,000 plants/acre, for small market carrots"
+  },
+  {
+    label: "30cm rows x 13cm between plants - Standard fresh market",
+    rowCm: 30, plantCm: 13, seedsPerHole: 1,
+    plantsPerAcre: calculatePlantsPerAcre(30, 13, 1),
+    description: "100,000 plants/acre – recommended for standard carrots"
+  },
+  {
+    label: "30cm rows x 17cm between plants - Large carrots",
+    rowCm: 30, plantCm: 17, seedsPerHole: 1,
+    plantsPerAcre: calculatePlantsPerAcre(30, 17, 1),
+    description: "80,000 plants/acre – for jumbo carrots"
+  }
+],
   "cauliflower": [
     {
       label: "60cm x 45cm - Standard spacing",
