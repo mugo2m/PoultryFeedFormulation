@@ -1,4 +1,4 @@
-// components/AskAgent.tsx - FINAL with dynamic currency and UK/US female voices
+// components/AskAgent.tsx - UPDATED with empty-slot guard in renderRecommendationText
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -153,15 +153,13 @@ const AskAgent = ({
     if (lang === 'es') return '€';
     if (lang === 'fr') return '€';
     if (lang === 'sw') return 'Ksh';
-    if (lang === 'en') return '$'; // or keep 'Ksh' if you prefer
+    if (lang === 'en') return '$';
     return currency.symbol || 'Ksh';
   };
 
   // Helper for spoken currency name (dynamic)
   const getSpokenCurrencyName = (): string => {
-    // Spanish override: always say "Euros"
     if (i18n.language === 'es') return 'Euros';
-    // For other languages, use the localized name from currency context
     const lang = i18n.language;
     switch (currency.code) {
       case 'KES':
@@ -330,10 +328,8 @@ const AskAgent = ({
     const currencyName = getSpokenCurrencyName();
     const symbol = currency.symbol;
     const escapedSymbol = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    // Replace symbol occurrences (with or without trailing space)
     speechText = speechText.replace(new RegExp(`${escapedSymbol}\\s`, 'g'), `${currencyName} `);
     speechText = speechText.replace(new RegExp(`\\b${escapedSymbol}\\b`, 'g'), currencyName);
-    // Also replace common East African symbols for safety (if they appear, e.g., in stored text)
     speechText = speechText
       .replace(/Ksh\s/g, `${currencyName} `)
       .replace(/Ksh\b/g, currencyName)
@@ -381,12 +377,10 @@ const AskAgent = ({
     utterance.volume = 1.0;
     utterance.lang = recognitionLanguage;
 
-    // ========== ENHANCED VOICE SELECTION (UK/US SEPARATED, FEMALE-ONLY) ==========
     const voices = window.speechSynthesis.getVoices();
     const matchingVoices = voices.filter(v => v.lang === recognitionLanguage);
     let preferredVoice = null;
 
-    // Helper for UK female voices (en-GB)
     const findBritishEnglishFemale = (): SpeechSynthesisVoice | null => {
       const femaleNames = [
         'libby', 'hazel', 'susan', 'maisie', 'sonia', 'kate', 'victoria', 'millie', 'olivia',
@@ -403,7 +397,6 @@ const AskAgent = ({
       return matchingVoices[0] || null;
     };
 
-    // Helper for US female voices (en-US)
     const findAmericanEnglishFemale = (): SpeechSynthesisVoice | null => {
       const femaleNames = [
         'samantha', 'victoria', 'zira', 'jenny', 'aria', 'google us english female',
@@ -419,7 +412,6 @@ const AskAgent = ({
       return matchingVoices[0] || null;
     };
 
-    // French voice selection (unchanged)
     const findFrenchVoice = (): SpeechSynthesisVoice | null => {
       const frenchFemale = matchingVoices.find(v =>
         v.name.toLowerCase().includes('vivienne') ||
@@ -432,7 +424,6 @@ const AskAgent = ({
       return matchingVoices[0] || null;
     };
 
-    // Spanish voice selection (unchanged)
     const findSpanishVoice = (): SpeechSynthesisVoice | null => {
       const femaleNames = [
         'elena', 'ximena', 'maria', 'paloma', 'sofia', 'catalina', 'salome', 'belkys',
@@ -454,14 +445,12 @@ const AskAgent = ({
       return matchingVoices[0] || null;
     };
 
-    // Swahili voice selection (unchanged)
     const findSwahiliVoice = (): SpeechSynthesisVoice | null => {
       let rafiki = matchingVoices.find(v => v.name.toLowerCase().includes('rafiki'));
       if (rafiki) return rafiki;
       return matchingVoices[0] || null;
     };
 
-    // ---- Apply language-specific selection ----
     if (recognitionLanguage === 'en-GB') {
       preferredVoice = findBritishEnglishFemale();
     } else if (recognitionLanguage === 'en-US') {
@@ -473,7 +462,6 @@ const AskAgent = ({
     } else if (recognitionLanguage === 'sw-KE' || recognitionLanguage.startsWith('sw')) {
       preferredVoice = findSwahiliVoice();
     } else {
-      // Fallback: any voice from the matching list
       preferredVoice = matchingVoices[0] || null;
     }
 
@@ -502,7 +490,6 @@ const AskAgent = ({
     utterance.onend = () => {
       setStreamingContent(speechText);
       setTimeout(() => {
-        // Store original text (with raw currency symbol) – UI will replace later
         setMessages(prev => [...prev, {
           role: "assistant",
           content: fullText,
@@ -784,7 +771,8 @@ const AskAgent = ({
     }
   ];
 
-  // Render grouped recommendations (unchanged)
+  // Render grouped recommendations with explicit line breaks for marker '␊'
+  // FIX: Skip rendering if the resolved text is empty (prevents empty slots from appearing)
   const renderRecommendationText = (item: StructuredItem, idx: number) => {
     const resolvedParams = resolveNestedTranslations(item.params || {});
     if (item.key === 'gap_grouped' && resolvedParams.gapKey) {
@@ -792,10 +780,22 @@ const AskAgent = ({
       resolvedParams.gapText = gapText;
     }
     const text = safeT(item.key, resolvedParams);
+    // Skip empty content
+    if (!text || text.trim() === '') {
+      return null;
+    }
+    const lines = text.split('␊');
     return (
       <div key={idx} className="bg-white/20 backdrop-blur-sm rounded-xl p-3 text-white">
         <span className="font-bold mr-2">{idx + 1}.</span>
-        <span className="text-sm whitespace-pre-line">{text}</span>
+        <span className="text-sm">
+          {lines.map((line, i) => (
+            <span key={i}>
+              {line}
+              {i < lines.length - 1 && <br />}
+            </span>
+          ))}
+        </span>
       </div>
     );
   };
@@ -909,7 +909,6 @@ const AskAgent = ({
       <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-5 shadow-xl border-2 border-emerald-200 min-h-[400px] max-h-[600px] overflow-y-auto">
         <div className="space-y-4">
           {messages.map((msg, index) => {
-            // Replace the current currency symbol with the display symbol for UI
             let displayContent = msg.content;
             const currentSymbol = currency.symbol;
             const displaySymbol = getDisplaySymbol();
@@ -917,7 +916,6 @@ const AskAgent = ({
               const escapedSym = currentSymbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
               displayContent = displayContent.replace(new RegExp(escapedSym, 'g'), displaySymbol);
             }
-            // Also cleanup any leftover Ksh for safety
             if (displaySymbol !== 'Ksh') {
               displayContent = displayContent.replace(/Ksh/g, displaySymbol);
             }

@@ -1,4 +1,4 @@
-// components/Agent.tsx - Fixed voice language for en-GB
+// components/Agent.tsx - Full file with empty-slot skip
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -28,6 +28,8 @@ import { useCurrency } from '@/lib/context/CurrencyContext';
 import { formatCurrencyForDisplay } from '@/lib/utils/currency';
 import { getLanguageFromCountry } from '@/lib/config/language';
 
+const LINE_BREAK = '␊';
+
 interface AgentProps {
   userName: string;
   userId?: string;
@@ -50,17 +52,12 @@ const Agent = ({
   const { currency } = useCurrency();
   const [currentLang, setCurrentLang] = useState<string>('en');
 
- const getDisplaySymbol = (): string => {
-  // Always use the actual currency symbol from the user's profile
-  return currency.symbol || 'Ksh';
-};
+  const getDisplaySymbol = (): string => {
+    return currency.symbol || 'Ksh';
+  };
 
-  // Helper for spoken currency name (dynamic)
   const getSpokenCurrencyName = (): string => {
-    // Spanish override: always say "Euros"
     if (i18n.language === 'es') return 'Euros';
-
-    // For other languages, use the localized name from currency context
     const lang = i18n.language;
     switch (currency.code) {
       case 'KES':
@@ -80,7 +77,6 @@ const Agent = ({
     }
   };
 
-  // Sync language from session data
   useEffect(() => {
     const sessionLang = sessionData?.language;
     if (sessionLang && sessionLang !== i18n.language) {
@@ -91,7 +87,6 @@ const Agent = ({
     }
   }, [sessionData, i18n]);
 
-  // Populate structuredList and structuredFinancialAdvice
   useEffect(() => {
     if (sessionData?.structuredList) {
       console.log('📋 Setting structuredList:', sessionData.structuredList);
@@ -103,7 +98,6 @@ const Agent = ({
     }
   }, [sessionData]);
 
-  // Safe translation
   const safeT = (key: string, params?: any): string => {
     try {
       if (key && (key.includes(' ') || key.includes('\n') || key.includes('.'))) {
@@ -154,215 +148,70 @@ const Agent = ({
   const farmerCountry = sessionData?.country || 'kenya';
   const cropName = sessionData?.crops?.[0] || '';
 
-  // Helper to get GAP translation key from crop name (fallback)
   const getGapKeyFromCrop = (crop: string): string => {
     if (!crop) return 'gap_generic';
-    const cropLower = crop.toLowerCase().trim(); // trim to avoid spaces
+    const cropLower = crop.toLowerCase().trim();
     const cropKeyMap: Record<string, string> = {
-      'banana': 'gap_bananas',
-      'bananas': 'gap_bananas',
-      'maize': 'gap_maize',
-      'beans': 'gap_beans',
-      'finger millet': 'gap_finger_millet',
-      'sorghum': 'gap_sorghum',
-      'onions': 'gap_onions',
-      'avocados': 'gap_avocados',
-      'avocado': 'gap_avocados',
-      'rice': 'gap_rice',
-      'mangoes': 'gap_mangoes',
-      'mango': 'gap_mangoes',
-      'pineapples': 'gap_pineapples',
-      'watermelons': 'gap_watermelons',
-      'carrots': 'gap_carrots',
-      'chillies': 'gap_chillies',
-      'spinach': 'gap_spinach',
-      'pigeonpeas': 'gap_pigeonpeas',
-      'bambaranuts': 'gap_bambaranuts',
-      'yams': 'gap_yams',
-      'taro': 'gap_taro',
-      'okra': 'gap_okra',
-      'tea': 'gap_tea',
-      'macadamia': 'gap_macadamia',
-      'cocoa': 'gap_cocoa',
-      'soya beans': 'gap_soya_beans',
-      'cowpeas': 'gap_cowpeas',
-      'green grams': 'gap_green_grams',
-      'groundnuts': 'gap_groundnuts',
-      'sunflower': 'gap_sunflower',
-      'simsim': 'gap_simsim',
-      'coffee': 'gap_coffee',
-      'cotton': 'gap_cotton',
-      'sugarcane': 'gap_sugarcane',
-      'tobacco': 'gap_tobacco',
-      'cassava': 'gap_cassava',
-      'sweet potatoes': 'gap_sweet_potatoes',
-      'irish potatoes': 'gap_irish_potatoes',
-      'tomatoes': 'gap_tomatoes',
-      'kales': 'gap_kales',
-      'cabbages': 'gap_cabbages',
-      'capsicums': 'gap_capsicums',
-      'brinjals': 'gap_brinjals',
-      'french beans': 'gap_french_beans',
-      'garden peas': 'gap_garden_peas',
-      'oranges': 'gap_oranges',
-      'pawpaws': 'gap_pawpaws',
-      'passion fruit': 'gap_passion_fruit',
-      'lemons': 'gap_lemons',
-      'limes': 'gap_limes',
-      'grapefruit': 'gap_grapefruit',
-      'guava': 'gap_guava',
-      'jackfruit': 'gap_jackfruit',
-      'breadfruit': 'gap_breadfruit',
-      'pomegranate': 'gap_pomegranate',
-      'star fruit': 'gap_star_fruit',
-      'coconut': 'gap_coconut',
-      'cashew': 'gap_cashew',
-      'fig': 'gap_fig',
-      'date palm': 'gap_date_palm',
-      'mulberry': 'gap_mulberry',
-      'lychee': 'gap_lychee',
-      'persimmon': 'gap_persimmon',
-      'gooseberry': 'gap_gooseberry',
-      'currant': 'gap_currant',
-      'elderberry': 'gap_elderberry',
-      'rambutan': 'gap_rambutan',
-      'durian': 'gap_durian',
-      'mangosteen': 'gap_mangosteen',
-      'longan': 'gap_longan',
-      'marula': 'gap_marula',
-      'vanilla': 'gap_vanilla',
-      'cardamom': 'gap_cardamom',
-      'cinnamon': 'gap_cinnamon',
-      'cloves': 'gap_cloves',
-      'black pepper': 'gap_black_pepper',
-      'lemon grass': 'gap_lemon_grass',
-      'rosemary': 'gap_rosemary',
-      'thyme': 'gap_thyme',
-      'parsley': 'gap_parsley',
-      'coriander': 'gap_coriander',
-      'cauliflower': 'gap_cauliflower',
-      'broccoli': 'gap_broccoli',
-      'leeks': 'gap_leeks',
-      'celery': 'gap_celery',
-      'lettuce': 'gap_lettuce',
-      'radish': 'gap_radish',
-      'beetroot': 'gap_beetroot',
-      'sisal': 'gap_sisal',
-      'bamboo': 'gap_bamboo',
-      'napier grass': 'gap_napier_grass',
-      'rhodes grass': 'gap_rhodes_grass',
-      'lucerne': 'gap_lucerne',
-      'aloe vera': 'gap_aloe_vera',
-      'hibiscus': 'gap_hibiscus',
-      'brachiaria': 'gap_brachiaria',
-      'guinea grass': 'gap_guinea_grass',
-      'buffel grass': 'gap_buffel_grass',
-      'napier hybrid': 'gap_napier_hybrid',
-      'oats': 'gap_oats',
-      'italian ryegrass': 'gap_italian_ryegrass',
-      'timothy grass': 'gap_timothy_grass',
-      'orchard grass': 'gap_orchard_grass',
-      'white clover': 'gap_white_clover',
-      'forage sorghum': 'gap_forage_sorghum',
-      'alfalfa': 'gap_alfalfa',
-      'almond': 'gap_almond',
-      'artichoke': 'gap_artichoke',
-      'arugula': 'gap_arugula',
-      'asparagus': 'gap_asparagus',
-      'barley': 'gap_barley',
-      'basil': 'gap_basil',
-      'birds eye chili': 'gap_birds_eye_chili',
-      'brazil nut': 'gap_brazil_nut',
-      'buckwheat': 'gap_buckwheat',
-      'cayenne': 'gap_cayenne',
-      'chamomile': 'gap_chamomile',
-      'chestnut': 'gap_chestnut',
-      'chickpea': 'gap_chickpea',
-      'clover': 'gap_clover',
-      'dill': 'gap_dill',
-      'echinacea': 'gap_echinacea',
-      'endive': 'gap_endive',
-      'escarole': 'gap_escarole',
-      'faba bean': 'gap_faba_bean',
-      'fennel': 'gap_fennel',
-      'fenugreek': 'gap_fenugreek',
-      'flax': 'gap_flax',
-      'fonio': 'gap_fonio',
-      'frisee': 'gap_frisee',
-      'ginseng': 'gap_ginseng',
-      'goldenseal': 'gap_goldenseal',
-      'hazelnut': 'gap_hazelnut',
-      'hemp': 'gap_hemp',
-      'hops': 'gap_hops',
-      'horseradish': 'gap_horseradish',
-      'jalapeno': 'gap_jalapeno',
-      'jute': 'gap_jute',
-      'kenaf': 'gap_kenaf',
-      'kohlrabi': 'gap_kohlrabi',
-      'lavender': 'gap_lavender',
-      'lentil': 'gap_lentil',
-      'mint': 'gap_mint',
-      'mushroom': 'gap_mushroom',
-      'mustard': 'gap_mustard',
-      'oil palm': 'gap_oil_palm',
-      'oregano': 'gap_oregano',
-      'parsnip': 'gap_parsnip',
-      'peanut': 'gap_peanut',
-      'pecan': 'gap_pecan',
-      'pistachio': 'gap_pistachio',
-      'potatoes': 'gap_potatoes',
-      'pumpkin': 'gap_pumpkin',
-      'quinoa': 'gap_quinoa',
-      'rapeseed': 'gap_rapeseed',
-      'rhubarb': 'gap_rhubarb',
-      'rubber': 'gap_rubber',
-      'rutabaga': 'gap_rutabaga',
-      'safflower': 'gap_safflower',
-      'sage': 'gap_sage',
-      'sesame': 'gap_sesame',
-      'shea': 'gap_shea',
-      'spelt': 'gap_spelt',
-      'stinging nettle': 'gap_stinging_nettle',
-      'swiss chard': 'gap_swiss_chard',
-      'tarragon': 'gap_tarragon',
-      'teff': 'gap_teff',
-      'triticale': 'gap_triticale',
-      'turnip': 'gap_turnip',
-      'turnip greens': 'gap_turnip_greens',
-      'valerian': 'gap_valerian',
-      'vetch': 'gap_vetch',
-      'walnut': 'gap_walnut',
-      'wasabi': 'gap_wasabi',
-      'watercress': 'gap_watercress',
-      'wheat': 'gap_wheat',
-      'shallots': 'gap_shallots',
-      'chives': 'gap_chives',
-      'garlic': 'gap_garlic',
-      'african nightshade': 'gap_african_nightshade',
-      'amaranth': 'gap_amaranth',
-      'spider plant': 'gap_spider_plant',
-      'pumpkin leaves': 'gap_pumpkin_leaves',
-      'jute mallow': 'gap_jute_mallow',
-      'ethiopian kale': 'gap_ethiopian_kale',
-      'slender leaf': 'gap_slender_leaf',
-      'oyster nut': 'gap_oyster_nut',
-      'mucuna': 'gap_mucuna',
-      'desmodium': 'gap_desmodium',
-      'dolichos': 'gap_dolichos',
-      'canavalia': 'gap_canavalia',
-      'sunn hemp': 'gap_sunn_hemp',
-      'crotalaria paulina': 'gap_crotalaria_paulina',
-      'moringa': 'gap_moringa',
-      'ginger': 'gap_ginger',
-      'turmeric': 'gap_turmeric',
+      'banana': 'gap_bananas', 'bananas': 'gap_bananas', 'maize': 'gap_maize', 'beans': 'gap_beans',
+      'finger millet': 'gap_finger_millet', 'sorghum': 'gap_sorghum', 'onions': 'gap_onions',
+      'avocados': 'gap_avocados', 'avocado': 'gap_avocados', 'rice': 'gap_rice', 'mangoes': 'gap_mangoes',
+      'mango': 'gap_mangoes', 'pineapples': 'gap_pineapples', 'watermelons': 'gap_watermelons',
+      'carrots': 'gap_carrots', 'chillies': 'gap_chillies', 'spinach': 'gap_spinach', 'pigeonpeas': 'gap_pigeonpeas',
+      'bambaranuts': 'gap_bambaranuts', 'yams': 'gap_yams', 'taro': 'gap_taro', 'okra': 'gap_okra',
+      'tea': 'gap_tea', 'macadamia': 'gap_macadamia', 'cocoa': 'gap_cocoa', 'soya beans': 'gap_soya_beans',
+      'cowpeas': 'gap_cowpeas', 'green grams': 'gap_green_grams', 'groundnuts': 'gap_groundnuts',
+      'sunflower': 'gap_sunflower', 'simsim': 'gap_simsim', 'coffee': 'gap_coffee', 'cotton': 'gap_cotton',
+      'sugarcane': 'gap_sugarcane', 'tobacco': 'gap_tobacco', 'cassava': 'gap_cassava',
+      'sweet potatoes': 'gap_sweet_potatoes', 'irish potatoes': 'gap_irish_potatoes', 'tomatoes': 'gap_tomatoes',
+      'kales': 'gap_kales', 'cabbages': 'gap_cabbages', 'capsicums': 'gap_capsicums', 'brinjals': 'gap_brinjals',
+      'french beans': 'gap_french_beans', 'garden peas': 'gap_garden_peas', 'oranges': 'gap_oranges',
+      'pawpaws': 'gap_pawpaws', 'passion fruit': 'gap_passion_fruit', 'lemons': 'gap_lemons', 'limes': 'gap_limes',
+      'grapefruit': 'gap_grapefruit', 'guava': 'gap_guava', 'jackfruit': 'gap_jackfruit', 'breadfruit': 'gap_breadfruit',
+      'pomegranate': 'gap_pomegranate', 'star fruit': 'gap_star_fruit', 'coconut': 'gap_coconut', 'cashew': 'gap_cashew',
+      'fig': 'gap_fig', 'date palm': 'gap_date_palm', 'mulberry': 'gap_mulberry', 'lychee': 'gap_lychee',
+      'persimmon': 'gap_persimmon', 'gooseberry': 'gap_gooseberry', 'currant': 'gap_currant', 'elderberry': 'gap_elderberry',
+      'rambutan': 'gap_rambutan', 'durian': 'gap_durian', 'mangosteen': 'gap_mangosteen', 'longan': 'gap_longan',
+      'marula': 'gap_marula', 'vanilla': 'gap_vanilla', 'cardamom': 'gap_cardamom', 'cinnamon': 'gap_cinnamon',
+      'cloves': 'gap_cloves', 'black pepper': 'gap_black_pepper', 'lemon grass': 'gap_lemon_grass',
+      'rosemary': 'gap_rosemary', 'thyme': 'gap_thyme', 'parsley': 'gap_parsley', 'coriander': 'gap_coriander',
+      'cauliflower': 'gap_cauliflower', 'broccoli': 'gap_broccoli', 'leeks': 'gap_leeks', 'celery': 'gap_celery',
+      'lettuce': 'gap_lettuce', 'radish': 'gap_radish', 'beetroot': 'gap_beetroot', 'sisal': 'gap_sisal',
+      'bamboo': 'gap_bamboo', 'napier grass': 'gap_napier_grass', 'rhodes grass': 'gap_rhodes_grass',
+      'lucerne': 'gap_lucerne', 'aloe vera': 'gap_aloe_vera', 'hibiscus': 'gap_hibiscus', 'brachiaria': 'gap_brachiaria',
+      'guinea grass': 'gap_guinea_grass', 'buffel grass': 'gap_buffel_grass', 'napier hybrid': 'gap_napier_hybrid',
+      'oats': 'gap_oats', 'italian ryegrass': 'gap_italian_ryegrass', 'timothy grass': 'gap_timothy_grass',
+      'orchard grass': 'gap_orchard_grass', 'white clover': 'gap_white_clover', 'forage sorghum': 'gap_forage_sorghum',
+      'alfalfa': 'gap_alfalfa', 'almond': 'gap_almond', 'artichoke': 'gap_artichoke', 'arugula': 'gap_arugula',
+      'asparagus': 'gap_asparagus', 'barley': 'gap_barley', 'basil': 'gap_basil', 'birds eye chili': 'gap_birds_eye_chili',
+      'brazil nut': 'gap_brazil_nut', 'buckwheat': 'gap_buckwheat', 'cayenne': 'gap_cayenne', 'chamomile': 'gap_chamomile',
+      'chestnut': 'gap_chestnut', 'chickpea': 'gap_chickpea', 'clover': 'gap_clover', 'dill': 'gap_dill',
+      'echinacea': 'gap_echinacea', 'endive': 'gap_endive', 'escarole': 'gap_escarole', 'faba bean': 'gap_faba_bean',
+      'fennel': 'gap_fennel', 'fenugreek': 'gap_fenugreek', 'flax': 'gap_flax', 'fonio': 'gap_fonio',
+      'frisee': 'gap_frisee', 'ginseng': 'gap_ginseng', 'goldenseal': 'gap_goldenseal', 'hazelnut': 'gap_hazelnut',
+      'hemp': 'gap_hemp', 'hops': 'gap_hops', 'horseradish': 'gap_horseradish', 'jalapeno': 'gap_jalapeno',
+      'jute': 'gap_jute', 'kenaf': 'gap_kenaf', 'kohlrabi': 'gap_kohlrabi', 'lavender': 'gap_lavender',
+      'lentil': 'gap_lentil', 'mint': 'gap_mint', 'mushroom': 'gap_mushroom', 'mustard': 'gap_mustard',
+      'oil palm': 'gap_oil_palm', 'oregano': 'gap_oregano', 'parsnip': 'gap_parsnip', 'peanut': 'gap_peanut',
+      'pecan': 'gap_pecan', 'pistachio': 'gap_pistachio', 'potatoes': 'gap_potatoes', 'pumpkin': 'gap_pumpkin',
+      'quinoa': 'gap_quinoa', 'rapeseed': 'gap_rapeseed', 'rhubarb': 'gap_rhubarb', 'rubber': 'gap_rubber',
+      'rutabaga': 'gap_rutabaga', 'safflower': 'gap_safflower', 'sage': 'gap_sage', 'sesame': 'gap_sesame',
+      'shea': 'gap_shea', 'spelt': 'gap_spelt', 'stinging nettle': 'gap_stinging_nettle', 'swiss chard': 'gap_swiss_chard',
+      'tarragon': 'gap_tarragon', 'teff': 'gap_teff', 'triticale': 'gap_triticale', 'turnip': 'gap_turnip',
+      'turnip greens': 'gap_turnip_greens', 'valerian': 'gap_valerian', 'vetch': 'gap_vetch', 'walnut': 'gap_walnut',
+      'wasabi': 'gap_wasabi', 'watercress': 'gap_watercress', 'wheat': 'gap_wheat', 'shallots': 'gap_shallots',
+      'chives': 'gap_chives', 'garlic': 'gap_garlic', 'african nightshade': 'gap_african_nightshade',
+      'amaranth': 'gap_amaranth', 'spider plant': 'gap_spider_plant', 'pumpkin leaves': 'gap_pumpkin_leaves',
+      'jute mallow': 'gap_jute_mallow', 'ethiopian kale': 'gap_ethiopian_kale', 'slender leaf': 'gap_slender_leaf',
+      'oyster nut': 'gap_oyster_nut', 'mucuna': 'gap_mucuna', 'desmodium': 'gap_desmodium', 'dolichos': 'gap_dolichos',
+      'canavalia': 'gap_canavalia', 'sunn hemp': 'gap_sunn_hemp', 'crotalaria paulina': 'gap_crotalaria_paulina',
+      'moringa': 'gap_moringa', 'ginger': 'gap_ginger', 'turmeric': 'gap_turmeric',
     };
     return cropKeyMap[cropLower] || 'gap_generic';
   };
 
-  // Voice language uses UI language - FIXED to handle en-GB properly
   const recognitionLanguage = (() => {
     const lang = i18n.language || 'en';
-    if (lang === 'en-GB') return 'en-GB';   // ← ADDED
+    if (lang === 'en-GB') return 'en-GB';
     if (lang === 'en') return 'en-US';
     if (lang === 'fr') return 'fr-FR';
     if (lang === 'sw') return 'sw-KE';
@@ -372,168 +221,88 @@ const Agent = ({
 
   console.log(`🎤 Voice language set to: ${recognitionLanguage} (UI language: ${i18n.language})`);
 
-  // ========== ENHANCED VOICE SELECTION (UK/US SEPARATED, FEMALE-ONLY) ==========
   const getBestVoice = () => {
     const voices = window.speechSynthesis.getVoices();
     console.log(`Looking for voice for language: ${recognitionLanguage}`);
 
-    // Helper for UK female voices (en-GB)
     const findBritishEnglishFemale = (): SpeechSynthesisVoice | null => {
-      const femaleNames = [
-        'libby', 'hazel', 'susan', 'maisie', 'sonia', 'kate', 'victoria', 'millie', 'olivia',
-        'google uk english female', 'microsoft libby', 'microsoft hazel', 'microsoft susan',
-        'microsoft maisie', 'microsoft sonia', 'british english female', 'uk english female'
-      ];
+      const femaleNames = ['libby', 'hazel', 'susan', 'maisie', 'sonia', 'kate', 'victoria', 'millie', 'olivia', 'google uk english female', 'microsoft libby', 'microsoft hazel', 'microsoft susan', 'microsoft maisie', 'microsoft sonia', 'british english female', 'uk english female'];
       for (const name of femaleNames) {
         const voice = voices.find(v => v.lang === 'en-GB' && v.name.toLowerCase().includes(name));
-        if (voice) {
-          console.log(`✅ Found British female voice: ${voice.name} (${voice.lang})`);
-          return voice;
-        }
+        if (voice) return voice;
       }
       const maleIndicators = ['george', 'ryan', 'thomas', 'david', 'mark', 'james', 'john', 'paul', 'michael'];
       const anyBritishFemale = voices.find(v => v.lang === 'en-GB' && !maleIndicators.some(m => v.name.toLowerCase().includes(m)));
-      if (anyBritishFemale) {
-        console.log(`⚠️ Using non-male British voice: ${anyBritishFemale.name}`);
-        return anyBritishFemale;
-      }
-      const anyBritish = voices.find(v => v.lang === 'en-GB');
-      if (anyBritish) console.log(`⚠️ Falling back to any British voice: ${anyBritish.name}`);
-      return anyBritish || null;
+      if (anyBritishFemale) return anyBritishFemale;
+      return voices.find(v => v.lang === 'en-GB') || null;
     };
 
-    // Helper for US female voices (en-US)
     const findAmericanEnglishFemale = (): SpeechSynthesisVoice | null => {
-      const femaleNames = [
-        'samantha', 'victoria', 'zira', 'jenny', 'aria', 'google us english female',
-        'microsoft jenny', 'microsoft zira', 'microsoft aria', 'us english female'
-      ];
+      const femaleNames = ['samantha', 'victoria', 'zira', 'jenny', 'aria', 'google us english female', 'microsoft jenny', 'microsoft zira', 'microsoft aria', 'us english female'];
       for (const name of femaleNames) {
         const voice = voices.find(v => v.lang === 'en-US' && v.name.toLowerCase().includes(name));
-        if (voice) {
-          console.log(`✅ Found US female voice: ${voice.name} (${voice.lang})`);
-          return voice;
-        }
+        if (voice) return voice;
       }
       const maleIndicators = ['david', 'mark', 'james', 'john', 'paul', 'michael', 'alex', 'thomas'];
       const anyFemale = voices.find(v => v.lang === 'en-US' && !maleIndicators.some(m => v.name.toLowerCase().includes(m)));
-      if (anyFemale) {
-        console.log(`⚠️ Using non-male US voice: ${anyFemale.name}`);
-        return anyFemale;
-      }
-      const anyUS = voices.find(v => v.lang === 'en-US');
-      if (anyUS) console.log(`⚠️ Falling back to any US voice: ${anyUS.name}`);
-      return anyUS || null;
+      if (anyFemale) return anyFemale;
+      return voices.find(v => v.lang === 'en-US') || null;
     };
 
     const findFrenchVoice = (): SpeechSynthesisVoice | null => {
       let vivienne = voices.find(v => v.lang.startsWith('fr') && v.name.toLowerCase().includes('vivienne'));
       if (vivienne) return vivienne;
-      const frenchFemale = voices.find(v => v.lang.startsWith('fr') &&
-        (v.name.toLowerCase().includes('denise') ||
-         v.name.toLowerCase().includes('google français female') ||
-         v.name.toLowerCase().includes('marie') ||
-         v.name.toLowerCase().includes('chloe')));
+      const frenchFemale = voices.find(v => v.lang.startsWith('fr') && (v.name.toLowerCase().includes('denise') || v.name.toLowerCase().includes('google français female') || v.name.toLowerCase().includes('marie') || v.name.toLowerCase().includes('chloe')));
       if (frenchFemale) return frenchFemale;
-      const anyFrench = voices.find(v => v.lang.startsWith('fr'));
-      return anyFrench || null;
+      return voices.find(v => v.lang.startsWith('fr')) || null;
     };
 
     const findSpanishVoice = (): SpeechSynthesisVoice | null => {
-      const femaleNames = [
-        'elena', 'ximena', 'maria', 'paloma', 'sofia', 'catalina', 'salome', 'belkys',
-        'ramona', 'andrea', 'lorena', 'teresa', 'marta', 'karla', 'dalia', 'yolanda',
-        'margarita', 'tania', 'camila', 'karina', 'elvira', 'valentina', 'paola',
-        'michelle', 'gabriela', 'lucia', 'laura', 'fernanda', 'victoria', 'monica',
-        'paulina', 'sabina', 'helena', 'florencia'
-      ];
+      const femaleNames = ['elena', 'ximena', 'maria', 'paloma', 'sofia', 'catalina', 'salome', 'belkys', 'ramona', 'andrea', 'lorena', 'teresa', 'marta', 'karla', 'dalia', 'yolanda', 'margarita', 'tania', 'camila', 'karina', 'elvira', 'valentina', 'paola', 'michelle', 'gabriela', 'lucia', 'laura', 'fernanda', 'victoria', 'monica', 'paulina', 'sabina', 'helena', 'florencia'];
       for (const name of femaleNames) {
-        const voice = voices.find(v =>
-          v.lang.startsWith('es') &&
-          v.name.toLowerCase().includes(name)
-        );
-        if (voice) {
-          console.log(`✅ Found female Spanish voice: ${voice.name} (${voice.lang})`);
-          return voice;
-        }
+        const voice = voices.find(v => v.lang.startsWith('es') && v.name.toLowerCase().includes(name));
+        if (voice) return voice;
       }
-      const nonMale = voices.find(v =>
-        v.lang.startsWith('es') &&
-        !v.name.toLowerCase().includes('alvaro') &&
-        !v.name.toLowerCase().includes('jorge') &&
-        !v.name.toLowerCase().includes('manuel') &&
-        !v.name.toLowerCase().includes('andres') &&
-        !v.name.toLowerCase().includes('carlos') &&
-        !v.name.toLowerCase().includes('juan') &&
-        !v.name.toLowerCase().includes('luis') &&
-        !v.name.toLowerCase().includes('rodrigo') &&
-        !v.name.toLowerCase().includes('javier')
-      );
-      if (nonMale) {
-        console.log(`⚠️ No exact female Spanish voice, using fallback: ${nonMale.name}`);
-        return nonMale;
-      }
-      console.warn('❌ No female Spanish voice found – falling back to English');
+      const nonMale = voices.find(v => v.lang.startsWith('es') && !v.name.toLowerCase().includes('alvaro') && !v.name.toLowerCase().includes('jorge') && !v.name.toLowerCase().includes('manuel') && !v.name.toLowerCase().includes('andres') && !v.name.toLowerCase().includes('carlos') && !v.name.toLowerCase().includes('juan') && !v.name.toLowerCase().includes('luis') && !v.name.toLowerCase().includes('rodrigo') && !v.name.toLowerCase().includes('javier'));
+      if (nonMale) return nonMale;
       return null;
     };
 
     const findSwahiliVoice = (): SpeechSynthesisVoice | null => {
-      let swahiliVoices = voices.filter(v =>
-        v.lang === 'sw-KE' &&
-        (v.name.includes('Rafiki') || v.name.includes('Zuri') || v.name.includes('Aisha') || v.name.includes('Kenya'))
-      );
-      if (swahiliVoices.length > 0) {
-        console.log(`✅ Swahili voice found: ${swahiliVoices[0].name}`);
-        return swahiliVoices[0];
-      }
+      let swahiliVoices = voices.filter(v => v.lang === 'sw-KE' && (v.name.includes('Rafiki') || v.name.includes('Zuri') || v.name.includes('Aisha') || v.name.includes('Kenya')));
+      if (swahiliVoices.length > 0) return swahiliVoices[0];
       swahiliVoices = voices.filter(v => v.lang === 'sw-KE');
-      if (swahiliVoices.length > 0) {
-        console.log(`✅ Swahili voice (any) found: ${swahiliVoices[0].name}`);
-        return swahiliVoices[0];
-      }
-      console.warn('No Swahili voice found, falling back to English');
+      if (swahiliVoices.length > 0) return swahiliVoices[0];
       return null;
     };
 
-    // --- Language-specific selection ---
     if (recognitionLanguage === 'en-GB') {
       const britishVoice = findBritishEnglishFemale();
       if (britishVoice) return { voice: britishVoice, language: 'en-GB' };
-      // Fallback to any non-male English voice
       const anyNonMale = voices.find(v => v.lang.startsWith('en') && !v.name.toLowerCase().includes('male'));
       if (anyNonMale) return { voice: anyNonMale, language: 'en-GB' };
     }
-
     if (recognitionLanguage === 'en-US') {
       const usVoice = findAmericanEnglishFemale();
       if (usVoice) return { voice: usVoice, language: 'en-US' };
       const anyNonMale = voices.find(v => v.lang.startsWith('en') && !v.name.toLowerCase().includes('male'));
       if (anyNonMale) return { voice: anyNonMale, language: 'en-US' };
     }
-
     if (recognitionLanguage === 'fr-FR' || recognitionLanguage === 'fr-CA' || recognitionLanguage.startsWith('fr')) {
       const frenchVoice = findFrenchVoice();
       if (frenchVoice) return { voice: frenchVoice, language: 'fr-FR' };
-      console.warn('No French voice found, falling back to Spanish');
     }
-
     if (recognitionLanguage === 'es-ES' || recognitionLanguage.startsWith('es')) {
       const spanishVoice = findSpanishVoice();
       if (spanishVoice) return { voice: spanishVoice, language: 'es-ES' };
-      console.warn('No female Spanish voice, falling back to Swahili');
     }
-
     if (recognitionLanguage === 'sw-KE' || recognitionLanguage === 'sw-TZ' || recognitionLanguage.startsWith('sw')) {
       const swahiliVoice = findSwahiliVoice();
       if (swahiliVoice) return { voice: swahiliVoice, language: 'sw-KE' };
-      console.warn('No Swahili voice, falling back to English');
     }
-
-    // Ultimate fallback: any English voice (non‑male preferred) or null to let browser choose
     const anyEnglish = voices.find(v => v.lang.startsWith('en') && !v.name.toLowerCase().includes('male'));
     if (anyEnglish) return { voice: anyEnglish, language: 'en-GB' };
     if (voices.length > 0) return { voice: voices[0], language: 'en-GB' };
-    console.log('⚠️ Using default voice (browser will choose)');
     return { voice: null, language: 'en-GB' };
   };
 
@@ -637,7 +406,6 @@ const Agent = ({
       .trim();
   };
 
-  // Prepare text for speech: replace every occurrence of the current currency symbol with its spoken name
   const prepareForSpeech = (text: string): string => {
     let speechText = cleanText(text);
     const currencyName = getSpokenCurrencyName();
@@ -645,7 +413,6 @@ const Agent = ({
     const escapedSymbol = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     speechText = speechText.replace(new RegExp(`${escapedSymbol}\\s`, 'g'), `${currencyName} `);
     speechText = speechText.replace(new RegExp(`\\b${escapedSymbol}\\b`, 'g'), currencyName);
-    // Also replace common East African symbols for safety
     speechText = speechText
       .replace(/Ksh\s/g, `${currencyName} `)
       .replace(/Ksh\b/g, currencyName)
@@ -663,7 +430,6 @@ const Agent = ({
     return speechText;
   };
 
-  // Karaoke streaming function
   const streamRecommendationKaraoke = async (rawRecommendation: string, index: number) => {
     if (!voiceEnabled || !window.speechSynthesis) return;
 
@@ -744,7 +510,6 @@ const Agent = ({
         return;
       }
 
-      // Wait for voices to load if not already loaded
       if (!voicesLoaded) {
         await waitForVoices();
       }
@@ -761,7 +526,7 @@ const Agent = ({
         utterance.volume = 1.0;
 
         const { voice, language } = getBestVoice();
-        utterance.voice = voice;   // May be null → browser default
+        utterance.voice = voice;
         utterance.lang = language;
 
         console.log(`🔊 Speaking with voice: ${utterance.voice?.name || 'default'} (${utterance.lang})`);
@@ -779,7 +544,6 @@ const Agent = ({
           console.error("Speech error with", utterance.voice?.name, ":", event);
           if (!resolved) {
             resolved = true;
-            // Retry with no voice (browser default) – do not fallback to English again
             utterance.voice = null;
             window.speechSynthesis.speak(utterance);
           }
@@ -787,7 +551,6 @@ const Agent = ({
 
         window.speechSynthesis.speak(utterance);
 
-        // Safety timeout
         setTimeout(() => {
           if (!resolved) {
             resolved = true;
@@ -830,31 +593,17 @@ const Agent = ({
         let gapKey = item.params?.gapKey;
         if (!gapKey && cropName) {
           gapKey = getGapKeyFromCrop(cropName);
-          console.log(`🔧 GAP fallback: using gap key "${gapKey}" for crop "${cropName}"`);
         }
         if (gapKey) parts.push(safeT(gapKey, {}));
         if (item.params?.remember) parts.push(item.params.remember);
-        content = parts.join('\n\n');
+        content = parts.join(LINE_BREAK);
       } else if (item.key === 'damage_report_grouped') {
         const parts = [];
         if (item.params?.title) parts.push(item.params.title);
         if (item.params?.message) parts.push(item.params.message);
         if (item.params?.advice) parts.push(item.params.advice);
         if (item.params?.followUp) parts.push(item.params.followUp);
-        content = parts.join('\n\n');
-      } else if (item.key === 'dolomitic_lime_grouped') {
-        const p = item.params;
-        const parts = [];
-        if (p.title) parts.push(p.title);
-        if (p.need) parts.push(p.need);
-        if (p.bags) parts.push(p.bags);
-        if (p.cost) parts.push(p.cost);
-        if (p.why) parts.push(p.why);
-        if (p.application) parts.push(p.application);
-        if (p.wait) parts.push(p.wait);
-        if (p.business) parts.push(p.business);
-        if (p.yearly) parts.push(p.yearly);
-        content = parts.join('\n\n');
+        content = parts.join(LINE_BREAK);
       } else if (item.key === 'crop_benefits_grouped') {
         const p = item.params;
         const parts = [];
@@ -864,9 +613,14 @@ const Agent = ({
         if (p.nutrientsList) parts.push(p.nutrientsList);
         if (p.healthHeader) parts.push(p.healthHeader);
         if (p.healthList) parts.push(p.healthList);
-        content = parts.join('\n\n');
+        content = parts.join(LINE_BREAK);
       } else {
         content = safeT(item.key, item.params);
+      }
+      // SKIP empty content
+      if (!content || content.trim() === '') {
+        console.log(`⚠️ Skipping empty recommendation at index ${i}`);
+        continue;
       }
       await streamRecommendationKaraoke(content, i);
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -955,9 +709,10 @@ const Agent = ({
     return safeT('start_voice_session');
   };
 
-  // Render recommendation text with proper symbol replacement for UI
+  // Render recommendation text – skip if content is empty
   const renderRecommendationText = (item: StructuredItem, idx: number) => {
     let displayContent = '';
+
     if (item.params?.content) {
       displayContent = item.params.content;
     } else if (item.key === 'gap_grouped') {
@@ -966,31 +721,17 @@ const Agent = ({
       let gapKey = item.params?.gapKey;
       if (!gapKey && cropName) {
         gapKey = getGapKeyFromCrop(cropName);
-        console.log(`🔧 GAP fallback (render): using gap key "${gapKey}" for crop "${cropName}"`);
       }
       if (gapKey) parts.push(safeT(gapKey, {}));
       if (item.params?.remember) parts.push(item.params.remember);
-      displayContent = parts.join('\n\n');
+      displayContent = parts.join(LINE_BREAK);
     } else if (item.key === 'damage_report_grouped') {
       const parts = [];
       if (item.params?.title) parts.push(item.params.title);
       if (item.params?.message) parts.push(item.params.message);
       if (item.params?.advice) parts.push(item.params.advice);
       if (item.params?.followUp) parts.push(item.params.followUp);
-      displayContent = parts.join('\n\n');
-    } else if (item.key === 'dolomitic_lime_grouped') {
-      const p = item.params;
-      const parts = [];
-      if (p.title) parts.push(p.title);
-      if (p.need) parts.push(p.need);
-      if (p.bags) parts.push(p.bags);
-      if (p.cost) parts.push(p.cost);
-      if (p.why) parts.push(p.why);
-      if (p.application) parts.push(p.application);
-      if (p.wait) parts.push(p.wait);
-      if (p.business) parts.push(p.business);
-      if (p.yearly) parts.push(p.yearly);
-      displayContent = parts.join('\n\n');
+      displayContent = parts.join(LINE_BREAK);
     } else if (item.key === 'crop_benefits_grouped') {
       const p = item.params;
       const parts = [];
@@ -1000,9 +741,14 @@ const Agent = ({
       if (p.nutrientsList) parts.push(p.nutrientsList);
       if (p.healthHeader) parts.push(p.healthHeader);
       if (p.healthList) parts.push(p.healthList);
-      displayContent = parts.join('\n\n');
+      displayContent = parts.join(LINE_BREAK);
     } else {
       displayContent = safeT(item.key, item.params);
+    }
+
+    // Skip if no content
+    if (!displayContent || displayContent.trim() === '') {
+      return null;
     }
 
     const streamingText = recommendationStreams[idx];
@@ -1024,6 +770,8 @@ const Agent = ({
       finalText = finalText.replace(/Ksh/g, displaySymbol);
     }
 
+    const lines = finalText.split(/[\n\u240A]/);
+
     return (
       <div
         key={idx}
@@ -1036,7 +784,14 @@ const Agent = ({
             {idx + 1}
           </span>
           <div className="flex-1">
-            <p className="text-xl text-gray-800 leading-relaxed whitespace-pre-line">{finalText}</p>
+            <p className="text-xl text-gray-800 leading-relaxed">
+              {lines.map((line, i) => (
+                <span key={i}>
+                  {line}
+                  {i < lines.length - 1 && <br />}
+                </span>
+              ))}
+            </p>
             {isActive && recWordsRef.current[idx] && (
               <div className="mt-3 flex items-center gap-2">
                 <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">

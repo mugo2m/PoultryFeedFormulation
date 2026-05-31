@@ -1,4 +1,4 @@
-// app/api/vapi/generate/route.ts
+// app/api/vapi/generate/route.ts – with timeout fix
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/firebase/admin";
 import { FieldValue } from "firebase-admin/firestore";
@@ -11,6 +11,15 @@ import { getPlantingAdvice, getPlantingAdviceText } from "@/lib/data/plantingDat
 import { COUNTRY_CURRENCY_MAP } from "@/lib/config/currency";
 
 console.log("Farmer Session Generation Route Loaded");
+
+// ========== TIMEOUT UTILITY ==========
+const withTimeout = <T>(promise: Promise<T>, ms: number, errorMessage: string = "Operation timed out"): Promise<T> => {
+  let timeoutId: NodeJS.Timeout;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(errorMessage)), ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+};
 
 // ========== CACHING IMPLEMENTATION ==========
 const cache = new Map();
@@ -500,46 +509,51 @@ export async function POST(request: NextRequest) {
     if (!recommendationsOutput) {
       console.log("📋 Generating fresh recommendations for:", primaryCrop);
       try {
-        recommendationsOutput = await generateRecommendations({
-          hasSoilTest: hasDoneSoilTest === "Yes",
-          soilAnalysis,
-          fertilizerPlan,
-          crop: primaryCrop,
-          crops: cropsArray,
-          farmerData: {
-            farmerName: farmerName || 'Farmer',
-            usePlantingFertilizer,
-            useTopdressingFertilizer,
-            conservationPractices: cleanedConservationPractices,
-            commonPests: cleanedCommonPests,
-            commonDiseases: cleanedCommonDiseases,
-            managementLevel: "Medium",
-            actualYieldKg: validatedYieldKg,
-            pricePerKg: validatedPricePerKg,
-            totalCosts: totalCosts,
-            country: country || 'kenya',
-            limePricePerBag: calciticLimePricePerBag ? parseFloat(calciticLimePricePerBag) : 300,
-            recCalciticLime: recCalciticLime ? parseFloat(recCalciticLime) : 0,
-            recDolomiticLime: recDolomiticLime ? parseFloat(recDolomiticLime) : 0,
-            dolomiticLimePricePerBag: dolomiticLimePricePerBag ? parseFloat(dolomiticLimePricePerBag) : 300,
-            plantsDamaged: plantsDamaged ? parseInt(plantsDamaged) : null,
-            language: userLanguage,
-            deficiencySymptoms,
-            deficiencyLocation,
-            spacing: spacing,
-            storageMethod: storageMethod,
-            wantsNutritionBenefits: wantsNutritionBenefits === true || wantsNutritionBenefits === "Yes",
-            currencySymbol: currencyConfig.symbol,
-            currencyName: currencyConfig.name,
-          }
-        });
+        // *** ADD TIMEOUT HERE (120 seconds) ***
+        recommendationsOutput = await withTimeout(
+          generateRecommendations({
+            hasSoilTest: hasDoneSoilTest === "Yes",
+            soilAnalysis,
+            fertilizerPlan,
+            crop: primaryCrop,
+            crops: cropsArray,
+            farmerData: {
+              farmerName: farmerName || 'Farmer',
+              usePlantingFertilizer,
+              useTopdressingFertilizer,
+              conservationPractices: cleanedConservationPractices,
+              commonPests: cleanedCommonPests,
+              commonDiseases: cleanedCommonDiseases,
+              managementLevel: "Medium",
+              actualYieldKg: validatedYieldKg,
+              pricePerKg: validatedPricePerKg,
+              totalCosts: totalCosts,
+              country: country || 'kenya',
+              limePricePerBag: calciticLimePricePerBag ? parseFloat(calciticLimePricePerBag) : 300,
+              recCalciticLime: recCalciticLime ? parseFloat(recCalciticLime) : 0,
+              recDolomiticLime: recDolomiticLime ? parseFloat(recDolomiticLime) : 0,
+              dolomiticLimePricePerBag: dolomiticLimePricePerBag ? parseFloat(dolomiticLimePricePerBag) : 300,
+              plantsDamaged: plantsDamaged ? parseInt(plantsDamaged) : null,
+              language: userLanguage,
+              deficiencySymptoms,
+              deficiencyLocation,
+              spacing: spacing,
+              storageMethod: storageMethod,
+              wantsNutritionBenefits: wantsNutritionBenefits === true || wantsNutritionBenefits === "Yes",
+              currencySymbol: currencyConfig.symbol,
+              currencyName: currencyConfig.name,
+            }
+          }),
+          120000, // 120 seconds timeout
+          "Recommendation generation timed out after 120 seconds"
+        );
 
         cache.set(cacheKey, {
           data: recommendationsOutput,
           timestamp: Date.now(),
         });
         console.log("✅ Recommendations generated and cached");
-      } catch (error) {
+      } catch (error: any) {
         console.error("❌ Error generating recommendations:", error);
         const profitStatus = grossMargin >= 0 ? "profit" : "loss";
         recommendationsOutput = {
@@ -701,7 +715,7 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   return NextResponse.json({
     status: "operational",
-    message: "Farmer Session Generation API - KG ONLY with Simplified Costs + Caching + Unified Currency",
-    version: "3.2"
+    message: "Farmer Session Generation API - KG ONLY with Simplified Costs + Caching + Unified Currency + Timeout",
+    version: "3.3"
   });
 }
