@@ -226,7 +226,7 @@ const Agent = ({
     console.log(`Looking for voice for language: ${recognitionLanguage}`);
 
     const findBritishEnglishFemale = (): SpeechSynthesisVoice | null => {
-      const femaleNames = ['libby', 'hazel', 'susan', 'maisie', 'sonia', 'kate', 'victoria', 'millie', 'olivia', 'google uk english female', 'microsoft libby', 'microsoft hazel', 'microsoft susan', 'microsoft maisie', 'microsoft sonia', 'british english female', 'uk english female'];
+      const femaleNames = ['libby', 'susan', 'maisie', 'sonia', 'kate', 'victoria', 'millie', 'olivia', 'google uk english female', 'microsoft libby', 'microsoft hazel', 'microsoft susan', 'microsoft maisie', 'microsoft sonia', 'british english female', 'uk english female'];
       for (const name of femaleNames) {
         const voice = voices.find(v => v.lang === 'en-GB' && v.name.toLowerCase().includes(name));
         if (voice) return voice;
