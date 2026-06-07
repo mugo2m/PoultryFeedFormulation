@@ -1,4 +1,4 @@
-// lib/recommendationEngine.ts – FINAL: All French issues fixed (EN, FR, ES, SW)
+// lib/recommendationEngine.ts – FULL 19-SLOT OUTPUT + DEBUG LOGS
 import { COUNTRY_CURRENCY_MAP } from '@/lib/config/currency';
 import { cropPestDiseaseMap, PestDisease } from '@/lib/data/pestDiseaseMapping';
 import swTranslations from '../public/locales/sw/common.json';
@@ -251,6 +251,9 @@ export async function generateRecommendations(input: RecommendationInput): Promi
   const isSpanish = language === 'es';
   const isEnglish = !isSwahili && !isFrench && !isSpanish;
 
+  // DEBUG: Log received fertilizerPlan
+  console.log("🔍 [ENGINE] Received fertilizerPlan:", JSON.stringify(fertilizerPlan, null, 2));
+
   const formatCurrency = (amount: number): string => {
     const currency = COUNTRY_CURRENCY_MAP[country] || COUNTRY_CURRENCY_MAP.kenya;
     const symbol = farmerData.currencySymbol || currency.symbol;
@@ -341,7 +344,7 @@ export async function generateRecommendations(input: RecommendationInput): Promi
     });
   }
 
-  // ========== GROUP 2: CALCITIC LIME – hardcoded French whyText ==========
+  // ========== GROUP 2: CALCITIC LIME ==========
   if (hasSoilTest && farmerData.recCalciticLime && farmerData.recCalciticLime > 0) {
     const limeKg = farmerData.recCalciticLime;
     const limePricePerBag = farmerData.limePricePerBag || 300;
@@ -358,7 +361,6 @@ export async function generateRecommendations(input: RecommendationInput): Promi
         whyText = safeT(SW.calcitic_lime_why_low_ca, `Kwa nini: Kalsiamu yako ni chini (${soilAnalysis.calcium} ppm). Chokaa cha calcitic huongeza kalsiamu bila kuongeza magnesiamu.`, soilAnalysis.calcium);
       }
     } else if (isFrench) {
-      // Hardcoded French whyText – replaces {{ph}} and {{ca}}
       if (soilAnalysis && soilAnalysis.ph < 5.5 && soilAnalysis.calcium && soilAnalysis.calcium < 400) {
         whyText = `Pourquoi : Votre pH est ${soilAnalysis.ph} (acide) et votre calcium est faible (${soilAnalysis.calcium} ppm). La chaux calcique résout les deux problèmes !`;
       } else if (soilAnalysis && soilAnalysis.ph < 5.5) {
@@ -394,11 +396,10 @@ export async function generateRecommendations(input: RecommendationInput): Promi
     const yearly = isSwahili ? safeT(SW.soil_test_yearly_reapply, "CHUNGUZA UDONGO KILA MWAKA kujua wakati wa kurudia.") : isFrench ? safeT(FR.soil_test_yearly_reapply, "ANALYSEZ LE SOL CHAQUE ANNÉE pour savoir quand renouveler l'application.") : isSpanish ? safeT(ES.soil_test_yearly_reapply, "ANALICE EL SUELO ANUALMENTE para saber cuándo reaplicar.") : 'TEST SOIL YEARLY to know when to reapply.';
 
     const contentLines = [title, need, bags, cost, whyText, application, wait, business, yearly].filter(line => line && line.trim() !== '');
-    const content = contentLines.join('\n');
-    structuredList.push({ key: 'calcitic_lime_grouped', params: { content, kg: limeKg, bags: bagsNeeded, total: formatCurrency(totalCost), perBag: formatCurrency(limePricePerBag), ph: soilAnalysis?.ph, ca: soilAnalysis?.calcium } });
+    structuredList.push({ key: 'calcitic_lime_grouped', params: { content: contentLines.join('\n'), kg: limeKg, bags: bagsNeeded, total: formatCurrency(totalCost), perBag: formatCurrency(limePricePerBag), ph: soilAnalysis?.ph, ca: soilAnalysis?.calcium } });
   }
 
-  // ========== GROUP 3: DOLOMITIC LIME – hardcoded French custom message ==========
+  // ========== GROUP 3: DOLOMITIC LIME ==========
   if (hasSoilTest && soilAnalysis) {
     const autoDolomitic = soilTestInterpreter.getDolomiticLimeRecommendation(soilAnalysis);
     let dolomiticNeeded = autoDolomitic.needed;
@@ -467,8 +468,7 @@ export async function generateRecommendations(input: RecommendationInput): Promi
         }
       }
       const contentLines = [title, need, bagsText, costText, whyText, application, wait, business, yearly].filter(line => line && line.trim() !== '');
-      const content = contentLines.join('\n');
-      structuredList.push({ key: 'dolomitic_lime_grouped', params: { content, kg: limeKg, bags: bagsNeeded, total: formatCurrency(totalCost), perBag: formatCurrency(dolomiticPricePerBag), mg: soilAnalysis?.magnesium, caMgRatio: soilAnalysis?.calcium && soilAnalysis?.magnesium ? (soilAnalysis.calcium / soilAnalysis.magnesium).toFixed(1) : undefined } });
+      structuredList.push({ key: 'dolomitic_lime_grouped', params: { content: contentLines.join('\n'), kg: limeKg, bags: bagsNeeded, total: formatCurrency(totalCost), perBag: formatCurrency(dolomiticPricePerBag), mg: soilAnalysis?.magnesium, caMgRatio: soilAnalysis?.calcium && soilAnalysis?.magnesium ? (soilAnalysis.calcium / soilAnalysis.magnesium).toFixed(1) : undefined } });
     }
   }
 
@@ -492,13 +492,18 @@ export async function generateRecommendations(input: RecommendationInput): Promi
       farmSize = `Your farm size: ${fertilizerPlan.farmSize} acre(s)`;
       totalInv = `TOTAL FERTILIZER INVESTMENT: ${formatCurrency(fertilizerPlan.totalCost)} for your entire farm`;
     }
-    const content = [title, farmSize, totalInv].join('\n');
-    structuredList.push({ key: 'fertilizer_header_grouped', params: { content, crop: crop.toUpperCase(), size: fertilizerPlan.farmSize, amount: formatCurrency(fertilizerPlan.totalCost) } });
+    structuredList.push({ key: 'fertilizer_header_grouped', params: { content: [title, farmSize, totalInv].join('\n'), crop: crop.toUpperCase(), size: fertilizerPlan.farmSize, amount: formatCurrency(fertilizerPlan.totalCost) } });
   }
 
   // ========== GROUP 5: PLANTING FERTILIZER ==========
+  console.log("🔍 [ENGINE] Checking planting fertilizer block:", {
+    hasSoilTest,
+    hasFertilizerPlan: !!fertilizerPlan,
+    plantingFertilizer: fertilizerPlan?.plantingFertilizer
+  });
   if (hasSoilTest && fertilizerPlan && fertilizerPlan.plantingFertilizer) {
     const pf = fertilizerPlan.plantingFertilizer;
+    console.log("✅ [ENGINE] Planting fertilizer found, kgNeeded:", pf.kgNeeded);
     if (pf && pf.kgNeeded > 0) {
       const bags = Math.floor(pf.kgNeeded / 50);
       const openBag = pf.kgNeeded % 50;
@@ -507,35 +512,43 @@ export async function generateRecommendations(input: RecommendationInput): Promi
         title = SW.planting_fertilizer_title;
         buyText = replacePlaceholders(SW.planting_fertilizer_buy, { kg: pf.kgNeeded, name: pf.name });
         costText = replacePlaceholders(SW.planting_fertilizer_cost, { cost: formatCurrency(pf.cost) });
-        providesText = replacePlaceholders(SW.planting_fertilizer_provides, { n: pf.n, p: pf.p, k: pf.k });
+        providesText = replacePlaceholders(SW.planting_fertilizer_provides, { n: pf.n.toFixed(1), p: pf.p.toFixed(1), k: pf.k.toFixed(1) });
         extra = pf.extraNutrients ? replacePlaceholders(SW.planting_fertilizer_extra, { nutrients: pf.extraNutrients }) : '';
       } else if (isFrench) {
         title = FR.planting_fertilizer_title;
         buyText = replacePlaceholders(FR.planting_fertilizer_buy, { kg: pf.kgNeeded, name: pf.name });
         costText = replacePlaceholders(FR.planting_fertilizer_cost, { cost: formatCurrency(pf.cost) });
-        providesText = replacePlaceholders(FR.planting_fertilizer_provides, { n: pf.n, p: pf.p, k: pf.k });
+        providesText = replacePlaceholders(FR.planting_fertilizer_provides, { n: pf.n.toFixed(1), p: pf.p.toFixed(1), k: pf.k.toFixed(1) });
         extra = pf.extraNutrients ? replacePlaceholders(FR.planting_fertilizer_extra, { nutrients: pf.extraNutrients }) : '';
       } else if (isSpanish) {
         title = ES.planting_fertilizer_title;
         buyText = replacePlaceholders(ES.planting_fertilizer_buy, { kg: pf.kgNeeded, name: pf.name });
         costText = replacePlaceholders(ES.planting_fertilizer_cost, { cost: formatCurrency(pf.cost) });
-        providesText = replacePlaceholders(ES.planting_fertilizer_provides, { n: pf.n, p: pf.p, k: pf.k });
+        providesText = replacePlaceholders(ES.planting_fertilizer_provides, { n: pf.n.toFixed(1), p: pf.p.toFixed(1), k: pf.k.toFixed(1) });
         extra = pf.extraNutrients ? replacePlaceholders(ES.planting_fertilizer_extra, { nutrients: pf.extraNutrients }) : '';
       } else {
         title = "PLANTING FERTILIZER (Apply at planting)";
         buyText = `Buy ${pf.kgNeeded} kg of ${pf.name}`;
         costText = `Cost: ${formatCurrency(pf.cost)}`;
-        providesText = `Provides: ${pf.n} kg N, ${pf.p} kg P, ${pf.k} kg K`;
+        providesText = `Provides: ${pf.n.toFixed(1)} kg N, ${pf.p.toFixed(1)} kg P, ${pf.k.toFixed(1)} kg K`;
         extra = pf.extraNutrients ? `Extra nutrients: ${pf.extraNutrients}` : '';
       }
       const bagInfo = isFrench ? `C'est ${bags} sac(s) de 50kg + ${openBag}kg ouvert` : (isSwahili ? `Hii ni magunia ${bags} ya 50kg + ${openBag}kg fungua` : `This is ${bags} bag(s) of 50kg + ${openBag}kg open`);
       const contentLines = [title, buyText, bagInfo, costText, providesText, extra].filter(l => l);
       structuredList.push({ key: 'planting_fertilizer', params: { content: contentLines.join('\n') } });
     }
+  } else {
+    console.log("⚠️ [ENGINE] Planting fertilizer skipped – conditions not met");
   }
 
   // ========== GROUP 6: TOPDRESSING FERTILIZER ==========
+  console.log("🔍 [ENGINE] Checking topdressing fertilizer block:", {
+    hasSoilTest,
+    hasFertilizerPlan: !!fertilizerPlan,
+    topdressingFertilizers: fertilizerPlan?.topdressingFertilizers
+  });
   if (hasSoilTest && fertilizerPlan && fertilizerPlan.topdressingFertilizers && fertilizerPlan.topdressingFertilizers.length) {
+    console.log("✅ [ENGINE] Topdressing fertilizers found, count:", fertilizerPlan.topdressingFertilizers.length);
     for (const tf of fertilizerPlan.topdressingFertilizers) {
       if (tf.kgNeeded > 0) {
         const bags = Math.floor(tf.kgNeeded / 50);
@@ -545,25 +558,25 @@ export async function generateRecommendations(input: RecommendationInput): Promi
           title = SW.topdressing_fertilizer_title;
           buyText = replacePlaceholders(SW.topdressing_fertilizer_buy, { kg: tf.kgNeeded, name: tf.name });
           costText = replacePlaceholders(SW.topdressing_fertilizer_cost, { cost: formatCurrency(tf.cost) });
-          providesText = replacePlaceholders(SW.topdressing_fertilizer_provides, { n: tf.n, p: tf.p, k: tf.k });
+          providesText = replacePlaceholders(SW.topdressing_fertilizer_provides, { n: tf.n.toFixed(1), p: tf.p.toFixed(1), k: tf.k.toFixed(1) });
           extra = tf.extraNutrients ? replacePlaceholders(SW.topdressing_fertilizer_extra, { nutrients: tf.extraNutrients }) : '';
         } else if (isFrench) {
           title = FR.topdressing_fertilizer_title;
           buyText = replacePlaceholders(FR.topdressing_fertilizer_buy, { kg: tf.kgNeeded, name: tf.name });
           costText = replacePlaceholders(FR.topdressing_fertilizer_cost, { cost: formatCurrency(tf.cost) });
-          providesText = replacePlaceholders(FR.topdressing_fertilizer_provides, { n: tf.n, p: tf.p, k: tf.k });
+          providesText = replacePlaceholders(FR.topdressing_fertilizer_provides, { n: tf.n.toFixed(1), p: tf.p.toFixed(1), k: tf.k.toFixed(1) });
           extra = tf.extraNutrients ? replacePlaceholders(FR.topdressing_fertilizer_extra, { nutrients: tf.extraNutrients }) : '';
         } else if (isSpanish) {
           title = ES.topdressing_fertilizer_title;
           buyText = replacePlaceholders(ES.topdressing_fertilizer_buy, { kg: tf.kgNeeded, name: tf.name });
           costText = replacePlaceholders(ES.topdressing_fertilizer_cost, { cost: formatCurrency(tf.cost) });
-          providesText = replacePlaceholders(ES.topdressing_fertilizer_provides, { n: tf.n, p: tf.p, k: tf.k });
+          providesText = replacePlaceholders(ES.topdressing_fertilizer_provides, { n: tf.n.toFixed(1), p: tf.p.toFixed(1), k: tf.k.toFixed(1) });
           extra = tf.extraNutrients ? replacePlaceholders(ES.topdressing_fertilizer_extra, { nutrients: tf.extraNutrients }) : '';
         } else {
           title = "TOP DRESSING FERTILIZER (Apply 3-4 weeks after planting)";
           buyText = `Buy ${tf.kgNeeded} kg of ${tf.name}`;
           costText = `Cost: ${formatCurrency(tf.cost)}`;
-          providesText = `Provides: ${tf.n} kg N, ${tf.p} kg P, ${tf.k} kg K`;
+          providesText = `Provides: ${tf.n.toFixed(1)} kg N, ${tf.p.toFixed(1)} kg P, ${tf.k.toFixed(1)} kg K`;
           extra = tf.extraNutrients ? `Extra nutrients: ${tf.extraNutrients}` : '';
         }
         const bagInfo = isFrench ? `C'est ${bags} sac(s) de 50kg + ${openBag}kg ouvert` : (isSwahili ? `Hii ni magunia ${bags} ya 50kg + ${openBag}kg fungua` : `This is ${bags} bag(s) of 50kg + ${openBag}kg open`);
@@ -571,10 +584,12 @@ export async function generateRecommendations(input: RecommendationInput): Promi
         structuredList.push({ key: 'topdressing_fertilizer', params: { content: contentLines.join('\n') } });
       }
     }
+  } else {
+    console.log("⚠️ [ENGINE] Topdressing fertilizers skipped – conditions not met");
   }
 
-  // ========== GROUP 7: PLANT POPULATION ==========
-  if (farmerData.spacing && fertilizerPlan && fertilizerPlan.farmSize) {
+  // ========== GROUP 7: PLANT POPULATION & PER-PLANT GUIDE ==========
+  if (farmerData.spacing && fertilizerPlan && fertilizerPlan.farmSize && fertilizerPlan.perPlant) {
     let spacing = farmerData.spacing;
     let plantsPerAcre = 0;
     if (spacing.includes('x')) {
@@ -586,17 +601,25 @@ export async function generateRecommendations(input: RecommendationInput): Promi
       }
     }
     if (plantsPerAcre > 0) {
-      let text = '';
+      let plantCountText = '';
       if (isSwahili) {
-        text = `Kulingana na umbali wako ${spacing}, una takriban mimea ${plantsPerAcre} kwenye ekari ${fertilizerPlan.farmSize}.`;
+        plantCountText = `Kulingana na umbali wako ${spacing}, una takriban mimea ${plantsPerAcre} kwenye ekari ${fertilizerPlan.farmSize}.`;
       } else if (isFrench) {
-        text = `Selon votre espacement ${spacing}, vous avez environ ${plantsPerAcre} plantes sur ${fertilizerPlan.farmSize} acres.`;
+        plantCountText = `Selon votre espacement ${spacing}, vous avez environ ${plantsPerAcre} plantes sur ${fertilizerPlan.farmSize} acres.`;
       } else if (isSpanish) {
-        text = `Según su espaciamiento ${spacing}, tiene aproximadamente ${plantsPerAcre} plantas en ${fertilizerPlan.farmSize} acres.`;
+        plantCountText = `Según su espaciamiento ${spacing}, tiene aproximadamente ${plantsPerAcre} plantas en ${fertilizerPlan.farmSize} acres.`;
       } else {
-        text = `According to your spacing ${spacing}, you have approximately ${plantsPerAcre} plants on ${fertilizerPlan.farmSize} acres.`;
+        plantCountText = `Based on your spacing of ${spacing}, you have approximately ${plantsPerAcre} plants on your ${fertilizerPlan.farmSize} acre farm.`;
       }
-      structuredList.push({ key: 'plant_population', params: { content: text, plants: plantsPerAcre, spacing } });
+      const pp = fertilizerPlan.perPlant;
+      const perPlantText = `
+FERTILIZER PER PLANT
+DAP: ${pp.dapGrams.toFixed(1)} grams (${pp.dapGuide})
+UREA: ${pp.ureaGrams.toFixed(1)} grams (${pp.ureaGuide})
+MOP: ${pp.mopGrams.toFixed(1)} grams (${pp.mopGuide})
+TOTAL: ${pp.totalGrams.toFixed(1)} grams (${pp.totalGuide})
+`;
+      structuredList.push({ key: 'plant_population', params: { content: plantCountText + perPlantText, plants: plantsPerAcre, spacing } });
     }
   }
 
@@ -618,35 +641,61 @@ export async function generateRecommendations(input: RecommendationInput): Promi
     }
   });
 
-  // ========== GROUP 10: GROSS MARGIN ANALYSIS ==========
+  // ========== GROUP 10: DETAILED GROSS MARGIN TABLE ==========
   let actualYieldKg = farmerData.actualYieldKg || 0;
   let pricePerKg = farmerData.pricePerKg || 0;
   let actualCosts = farmerData.totalCosts || 0;
   if (!actualYieldKg || actualYieldKg === 0) {
-    const defaultYields: Record<string, number> = { maize: 2000, beans: 1200, cassava: 8000, bananas: 20000 };
+    const defaultYields: Record<string, number> = { maize: 2000, beans: 1200, cassava: 8000, bananas: 20000, coffee: 2000 };
     actualYieldKg = defaultYields[lowerCrop] || 2000;
   }
   if (!pricePerKg || pricePerKg === 0) pricePerKg = 0.5;
   if (!actualCosts || actualCosts === 0) actualCosts = 50000;
+
   const lowYield = actualYieldKg * 0.33;
+  const mediumYield = actualYieldKg;
   const highYield = actualYieldKg * 1.26;
+  const lowCost = actualCosts * 0.5;
+  const mediumCost = actualCosts;
+  const highCost = actualCosts * 1.5;
+
   const lowRevenue = lowYield * pricePerKg;
-  const actualRevenue = actualYieldKg * pricePerKg;
+  const mediumRevenue = mediumYield * pricePerKg;
   const highRevenue = highYield * pricePerKg;
-  const lowMargin = lowRevenue - actualCosts * 0.5;
-  const actualMargin = actualRevenue - actualCosts;
-  const highMargin = highRevenue - actualCosts * 1.26;
-  let grossMarginText = '';
-  if (isSwahili) {
-    grossMarginText = `MAPATO HALISI: Shamba lako linaleta ${formatCurrency(actualMargin)} kwa ekari. Kuongeza matumizi kwa 26% kunaweza kuongeza hadi ${formatCurrency(highMargin - actualMargin)} zaidi!`;
-  } else if (isFrench) {
-    grossMarginText = `MARGE BRUTE : Votre ferme génère ${formatCurrency(actualMargin)} par acre. Augmenter les intrants de 26% pourrait ajouter jusqu'à ${formatCurrency(highMargin - actualMargin)} de plus !`;
-  } else if (isSpanish) {
-    grossMarginText = `MARGEN BRUTO: Su granja genera ${formatCurrency(actualMargin)} por acre. ¡Aumentar los insumos en un 26% podría agregar hasta ${formatCurrency(highMargin - actualMargin)} más!`;
-  } else {
-    grossMarginText = `GROSS MARGIN: Your farm generates ${formatCurrency(actualMargin)} per acre. Increasing inputs by 26% could add up to ${formatCurrency(highMargin - actualMargin)} more!`;
-  }
-  structuredList.push({ key: 'gross_margin', params: { content: grossMarginText, actualMargin, potentialGain: highMargin - actualMargin } });
+
+  const lowMargin = lowRevenue - lowCost;
+  const mediumMargin = mediumRevenue - mediumCost;
+  const highMargin = highRevenue - highCost;
+
+  const marginTable = `
+GROSS MARGIN ANALYSIS FOR YOUR ${crop.toUpperCase()} ENTERPRISE (per acre)
+Based on YOUR actual farm data, here's how different management levels compare
+
+LOW MANAGEMENT (33% of your current level)
+Yield: ${Math.round(lowYield).toLocaleString()} kg × ${formatCurrency(pricePerKg)} = ${formatCurrency(lowRevenue)}
+Costs: ${formatCurrency(lowCost)}
+GROSS MARGIN: ${formatCurrency(lowMargin)}
+
+MEDIUM MANAGEMENT (YOUR CURRENT LEVEL)
+Yield: ${Math.round(mediumYield).toLocaleString()} kg × ${formatCurrency(pricePerKg)} = ${formatCurrency(mediumRevenue)}
+Costs: ${formatCurrency(mediumCost)}
+GROSS MARGIN: ${formatCurrency(mediumMargin)}
+
+HIGH MANAGEMENT (126% of your current level)
+Yield: ${Math.round(highYield).toLocaleString()} kg × ${formatCurrency(pricePerKg)} = ${formatCurrency(highRevenue)}
+Costs: ${formatCurrency(highCost)}
+GROSS MARGIN: ${formatCurrency(highMargin)}
+
+From Low to Medium: +${Math.round((mediumMargin - lowMargin) / lowMargin * 100)}% profit increase
+From Medium to High: +${Math.round((highMargin - mediumMargin) / mediumMargin * 100)}% profit increase
+Every ${currencySymbol}1 invested returns ${(mediumMargin / actualCosts).toFixed(1)} profit at your current level
+Your current level: Medium
+
+BOTTOM LINE
+Moving from Medium to High could put an extra ${formatCurrency(highMargin - mediumMargin)} in your pocket
+`;
+
+  structuredList.push({ key: 'gross_margin_grouped', params: { content: marginTable, actualMargin: mediumMargin, potentialGain: highMargin - mediumMargin } });
 
   // ========== GROUP 11: GOOD AGRICULTURAL PRACTICES ==========
   let gapText = '';
@@ -656,7 +705,7 @@ export async function generateRecommendations(input: RecommendationInput): Promi
     gapText = `BONNES PRATIQUES AGRICOLES POUR ${crop.toUpperCase()}\nUtilisez des semences de qualité, des engrais appropriés et une irrigation correcte.`;
   } else if (isSpanish) {
     gapText = `BUENAS PRÁCTICAS AGRÍCOLAS PARA ${crop.toUpperCase()}\nUtilice semillas de calidad, fertilizantes apropiados y riego adecuado.`;
-  } else { // English
+  } else {
     if (lowerCrop === 'coffee') {
       gapText = `GOOD AGRICULTURAL PRACTICES FOR YOUR COFFEE ENTERPRISE
 Use healthy coffee seedlings (disease-resistant varieties). Plant at the onset of rains, spacing 2.5m x 2.5m (1,300 trees/acre). Dig holes 60cm x 60cm x 60cm, apply 100g DAP at planting. Maintain 40-50% shade for the first years. Apply 20kg of manure per tree annually. Prune to maintain shape. Harvest ripe (red) cherries.
@@ -678,9 +727,9 @@ REMEMBER: Every practice you do well puts more money in your pocket.`;
   }
   structuredList.push({ key: 'good_practices', params: { content: gapText, crop: crop.toUpperCase() } });
 
-  // ========== GROUP 12: DISEASE MANAGEMENT – with French post‑processing ==========
+  // ========== GROUP 12: DISEASE MANAGEMENT ==========
   if (farmerData.commonDiseases) {
-    let diseaseLines: string[] = [];   // ✅ CHANGED: const → let
+    let diseaseLines: string[] = [];
     const diseaseTitle = replacePlaceholders(isSwahili ? (SW.disease_management_title as string) : isFrench ? (FR.disease_management_title as string) : isSpanish ? (ES.disease_management_title as string) : null, { crop: crop.toUpperCase() }) || (isSwahili ? `USIMAMIZI JUMUISHI WA MAGONJWA KWA BIASHARA YAKO YA ${crop.toUpperCase()}` : isFrench ? `GESTION INTÉGRÉE DES MALADIES POUR VOTRE ENTREPRISE ${crop.toUpperCase()}` : isSpanish ? `MANEJO INTEGRADO DE ENFERMEDADES PARA SU EMPRESA ${crop.toUpperCase()}` : `INTEGRATED DISEASE MANAGEMENT FOR YOUR ${crop.toUpperCase()} ENTERPRISE`);
     diseaseLines.push(diseaseTitle);
     const diseaseReported = replacePlaceholders(isSwahili ? (SW.disease_reported as string) : isFrench ? (FR.disease_reported as string) : isSpanish ? (ES.disease_reported as string) : null, { diseases: farmerData.commonDiseases }) || (isSwahili ? `Magonjwa uliyoripoti: ${farmerData.commonDiseases}` : isFrench ? `Maladies signalées : ${farmerData.commonDiseases}` : isSpanish ? `Enfermedades reportadas: ${farmerData.commonDiseases}` : `The diseases affecting your ${crop.toUpperCase()} ENTERPRISE: ${farmerData.commonDiseases}`);
@@ -814,7 +863,6 @@ REMEMBER: Every practice you do well puts more money in your pocket.`;
     diseaseLines.push(isSwahili ? (SW.disease_business_case_title || "HALI YA BIASHARA") : isFrench ? (FR.disease_business_case_title || "CAS COMMERCIAL") : isSpanish ? (ES.disease_business_case_title || "CASO DE NEGOCIO") : 'BUSINESS CASE');
     diseaseLines.push(isSwahili ? `Bila udhibiti: Uwezekano wa hasara ya mavuno ya 30-100%\nKwa kuzuia: Gharama ${formatCurrency(2000)}-${formatCurrency(5000)}/ekari = OKOA ${formatCurrency(100000)}+!\nKila ${currencySymbol}1 inayotumika kuzuia magonjwa inarudisha ${currencySymbol}20-50 katika mavuno yaliyookolewa` : isFrench ? `Sans contrôle : Pertes de rendement possibles de 30 à 100 %\nAvec prévention : Coût ${formatCurrency(2000)}-${formatCurrency(5000)}/acre = ÉCONOMISEZ ${formatCurrency(100000)}+ !\nChaque ${currencySymbol}1 dépensé en prévention des maladies rapporte ${currencySymbol}20-50 en rendement économisé` : isSpanish ? `Sin control: Pérdidas de rendimiento del 30-100% posibles\nCon prevención: Costo ${formatCurrency(2000)}-${formatCurrency(5000)}/acre = ¡AHORRE ${formatCurrency(100000)}+!\nCada ${currencySymbol}1 gastado en prevención de enfermedades retorna ${currencySymbol}20-50 en rendimiento salvado` : `Without control: Yield losses of 30-100% possible\nWith prevention: Cost ${formatCurrency(2000)}-${formatCurrency(5000)}/acre = SAVE ${formatCurrency(100000)}+!\nEvery ${currencySymbol}1 spent on disease prevention returns ${currencySymbol}20-50 in saved yield`);
 
-    // French‑only post‑processing to replace Spanish labels with French
     if (isFrench) {
       let content = diseaseLines.join('\n');
       content = content.replace(/Preparación:/g, 'Préparation:')
@@ -833,9 +881,9 @@ REMEMBER: Every practice you do well puts more money in your pocket.`;
     structuredList.push({ key: 'disease_management_grouped', params: { content: diseaseLines.join('\n'), crop: crop.toUpperCase(), diseases: farmerData.commonDiseases, low: formatCurrency(2000), high: formatCurrency(5000), saved: formatCurrency(100000), symbol: currencySymbol } });
   }
 
-  // ========== GROUP 13: PEST MANAGEMENT – with French post‑processing ==========
+  // ========== GROUP 13: PEST MANAGEMENT ==========
   if (farmerData.commonPests) {
-    let pestLines: string[] = [];   // ✅ CHANGED: const → let
+    let pestLines: string[] = [];
     const pestTitle = replacePlaceholders(isSwahili ? (SW.pest_management_title as string) : isFrench ? (FR.pest_management_title as string) : isSpanish ? (ES.pest_management_title as string) : null, { crop: crop.toUpperCase() }) || (isSwahili ? `USIMAMIZI JUMUISHI WA WADUDU (IPM) KWA BIASHARA YAKO YA ${crop.toUpperCase()}` : isFrench ? `GESTION INTÉGRÉE DES RAVAGEURS (IPM) POUR VOTRE ENTREPRISE ${crop.toUpperCase()}` : isSpanish ? `MANEJO INTEGRADO DE PLAGAS (MIP) PARA SU EMPRESA ${crop.toUpperCase()}` : `INTEGRATED PEST MANAGEMENT (IPM) FOR YOUR ${crop.toUpperCase()} ENTERPRISE`);
     pestLines.push(pestTitle);
     const pestReported = replacePlaceholders(isSwahili ? (SW.pest_reported as string) : isFrench ? (FR.pest_reported as string) : isSpanish ? (ES.pest_reported as string) : null, { pests: farmerData.commonPests }) || (isSwahili ? `Wadudu ulioripoti: ${farmerData.commonPests}` : isFrench ? `Ravageurs signalés : ${farmerData.commonPests}` : isSpanish ? `Plagas reportadas: ${farmerData.commonPests}` : `The pests affecting your ${crop.toUpperCase()} ENTERPRISE: ${farmerData.commonPests}`);
@@ -969,7 +1017,6 @@ REMEMBER: Every practice you do well puts more money in your pocket.`;
     pestLines.push(isSwahili ? (SW.pest_business_calc_title || "HESABU YA BIASHARA") : isFrench ? (FR.pest_business_calc_title || "CALCUL COMMERCIAL") : isSpanish ? (ES.pest_business_calc_title || "CÁLCULO DE NEGOCIO") : 'BUSINESS CALCULATION');
     pestLines.push(isSwahili ? `Bila udhibiti: Hasara 40-60% ya mavuno = hasara ${formatCurrency(80000)}-${formatCurrency(120000)}/ekari\nKwa IPM: Gharama ${formatCurrency(1500)}-${formatCurrency(3000)} = OKOA ${formatCurrency(100000)}+ faida\nKila ${currencySymbol}1 inayotumika kudhibiti wadudu inarudisha ${currencySymbol}30-40 katika mavuno yaliyookolewa` : isFrench ? `Sans contrôle : Perte de rendement de 40 à 60 % = perte de ${formatCurrency(80000)}-${formatCurrency(120000)}/acre\nAvec IPM : Coût ${formatCurrency(1500)}-${formatCurrency(3000)} = ÉCONOMISEZ ${formatCurrency(100000)}+ de profit\nChaque ${currencySymbol}1 dépensé en lutte antiparasitaire rapporte ${currencySymbol}30-40 en rendement économisé` : isSpanish ? `Sin control: Pérdida del 40-60% del rendimiento = pérdida de ${formatCurrency(80000)}-${formatCurrency(120000)}/acre\nCon MIP: Costo ${formatCurrency(1500)}-${formatCurrency(3000)} = ¡AHORRE ${formatCurrency(100000)}+ de ganancia\nCada ${currencySymbol}1 gastado en control de plagas retorna ${currencySymbol}30-40 en rendimiento salvado` : `Without control: Loss 40-60% yield = ${formatCurrency(80000)}-${formatCurrency(120000)} loss/acre\nWith IPM: Cost ${formatCurrency(1500)}-${formatCurrency(3000)} = SAVE ${formatCurrency(100000)}+ profit\nEvery ${currencySymbol}1 spent on pest control returns ${currencySymbol}30-40 in saved yield`);
 
-    // French‑only post‑processing
     if (isFrench) {
       let content = pestLines.join('\n');
       content = content.replace(/Preparación:/g, 'Préparation:')
@@ -988,7 +1035,7 @@ REMEMBER: Every practice you do well puts more money in your pocket.`;
     structuredList.push({ key: 'pest_management_grouped', params: { content: pestLines.join('\n'), crop: crop.toUpperCase(), pests: farmerData.commonPests, lowLoss: formatCurrency(80000), highLoss: formatCurrency(120000), lowCost: formatCurrency(1500), highCost: formatCurrency(3000), saved: formatCurrency(100000), symbol: currencySymbol } });
   }
 
-  // ========== GROUP 14: NUTRIENT DEFICIENCY – French translation only when isFrench ==========
+  // ========== GROUP 14: NUTRIENT DEFICIENCY ==========
   if (farmerData.deficiencySymptoms && farmerData.deficiencySymptoms.trim() !== '') {
     let symptoms = farmerData.deficiencySymptoms;
     let location = farmerData.deficiencyLocation || 'not specified';
@@ -1135,7 +1182,7 @@ REMEMBER: Every practice you do well puts more money in your pocket.`;
   }
   structuredList.push({ key: 'conservation', params: { content: conservationText } });
 
-  // ========== GROUP 17: POST-HARVEST HANDLING & STORAGE – French translation only when isFrench ==========
+  // ========== GROUP 17: POST-HARVEST HANDLING & STORAGE ==========
   let storageMethod = farmerData.storageMethod || '';
   if (isFrench) {
     storageMethod = translateStorageFr(storageMethod);
@@ -1165,21 +1212,42 @@ REMEMBER: Every practice you do well puts more money in your pocket.`;
   }
   structuredList.push({ key: 'farming_business', params: { content: businessText } });
 
-  // ========== GROUP 19: NUTRITION BENEFITS ==========
+  // ========== GROUP 19: DETAILED NUTRITION & HEALTH BENEFITS ==========
   if (farmerData.wantsNutritionBenefits) {
     let nutritionText = '';
-    if (isFrench) {
-      if (lowerCrop === 'bananas') {
-        nutritionText = `🌿 NUTRITION ET BIENFAITS POUR LA SANTÉ – BANANAS\nPour 100g de produit frais\nNutriments Clés\n• Vitamin B6: 0.4 mg (24% de l'apport journalier)\n• Vitamin C: 8.7 mg (10% de l'apport journalier)\n• Potassium: 358 mg (8% de l'apport journalier)\n• Manganèse: 0.3 mg (13% de l'apport journalier)\n• Fiber: 2.6 g (9% de l'apport journalier)\n• Magnésium: 27 mg (6% de l'apport journalier)\n• Copper: 0.1 mg (8% de l'apport journalier)\n• Vitamin A: 3 µg (0% de l'apport journalier)\nBienfaits pour la Santé\nAime votre cœur – le potassium abaisse la tension artérielle\nAbaisse doucement la tension – le potassium équilibre les fluides\nFacilite la digestion – pectine et amidon résistant\nAméliore la récupération après l'effort – glucides et potassium\nÉlève votre moral – la vitamine B6 aide à produire de la sérotonine\nAide à contrôler le poids – satiété\nRenforce les os – manganèse\nProtège vos reins – peut réduire le risque de calculs rénaux\nAntioxydant – dopamine et catéchines`;
+    // Coffee (detailed)
+    if (lowerCrop === 'coffee') {
+      if (isFrench) {
+        nutritionText = `🌿 NUTRITION ET BIENFAITS POUR LA SANTÉ – CAFÉ\nPour 100g de produit frais\nNutriments Clés\n• Caféine: 95 mg\n• Riboflavine: 0.2 mg (11% VQ)\n• Magnésium: 7 mg (2% VQ)\n• Potassium: 116 mg (2% VQ)\n• Antioxydants: élevés\n• Niacine: 0.5 mg (3% VQ)\n• Manganèse: 0.1 mg (3% VQ)\n• Acide chlorogénique: variable\nBienfaits pour la Santé\nVigilance – la caféine bloque l'adénosine\nAntioxydant – réduit le stress oxydatif\nSanté du cerveau – peut réduire le risque d'Alzheimer\nSanté du foie – réduit le risque de cirrhose\nMétabolisme – peut accélérer le métabolisme\nSanté cardiaque – protection à consommation modérée\nDiabète de type 2 – peut réduire le risque\nDépression – peut réduire le risque`;
+      } else if (isSwahili) {
+        nutritionText = `🌿 MANUFAA YA LISHE NA AFYA – KAHABA\nKwa gramu 100 za mbegu mbichi\nVirutubisho Muhimu\n• Kafeini: 95 mg\n• Riboflauini: 0.2 mg (11% ya THK)\n• Magnesiamu: 7 mg (2% ya THK)\n• Potasiamu: 116 mg (2% ya THK)\n• Vioksidishaji: kiwango kikubwa\n• Niasini: 0.5 mg (3% ya THK)\n• Manganese: 0.1 mg (3% ya THK)\n• Asidi klorojeni: hutofautiana\nManufaa ya Kiafya\nUangalifu – kafeini huzuia adenosine\nKinga ya mwili – hupunguza mkazo wa seli\nAfya ya ubongo – inaweza kupunguza hatari ya Alzheimers\nAfya ya ini – inapunguza hatari ya ugonjwa wa ini\nKimetaboliki – inaweza kuongeza kasi ya uchomaji kalori\nAfya ya moyo – ulinzi ukiwa unywa kwa wastani\nUgonjwa wa kisukari aina 2 – inaweza kupunguza hatari\nMfadhaiko – inaweza kupunguza hatari`;
+      } else if (isSpanish) {
+        nutritionText = `🌿 BENEFICIOS NUTRICIONALES Y PARA LA SALUD – CAFÉ\nPor 100g de producto fresco\nNutrientes Clave\n• Cafeína: 95 mg\n• Riboflavina: 0.2 mg (11% VD)\n• Magnesio: 7 mg (2% VD)\n• Potasio: 116 mg (2% VD)\n• Antioxidantes: alto\n• Niacina: 0.5 mg (3% VD)\n• Manganeso: 0.1 mg (3% VD)\n• Ácido clorogénico: variable\nBeneficios para la Salud\nAlerta – la cafeína bloquea la adenosina\nAntioxidante – reduce el estrés oxidativo\nSalud cerebral – puede reducir el riesgo de Alzheimer\nSalud hepática – reduce el riesgo de cirrosis\nMetabolismo – puede acelerar el metabolismo\nSalud cardíaca – protección con consumo moderado\nDiabetes tipo 2 – puede reducir el riesgo\nDepresión – puede reducir el riesgo`;
       } else {
-        nutritionText = `🌿 BIENFAITS NUTRITIONNELS – ${crop.toUpperCase()}\nRiche en vitamines, minéraux et antioxydants. Une alimentation saine commence par votre ferme.`;
+        nutritionText = `🌿 NUTRITION & HEALTH BENEFITS – COFFEE\nPer 100g fresh weight\nKey Nutrients\n• Caffeine: 95 mg\n• Riboflavin: 0.2 mg (11% DV)\n• Magnesium: 7 mg (2% DV)\n• Potassium: 116 mg (2% DV)\n• Antioxidants: high\n• Niacin: 0.5 mg (3% DV)\n• Manganese: 0.1 mg (3% DV)\n• Chlorogenic acid: varies\nHealth Benefits\nAlertness – caffeine blocks adenosine\nAntioxidant – reduces oxidative stress\nBrain health – may lower risk of Alzheimer's\nLiver health – reduces risk of cirrhosis\nMetabolism – may boost metabolic rate\nHeart health – moderate consumption protective\nType 2 diabetes – may reduce risk\nDepression – may lower risk`;
       }
-    } else if (isSwahili) {
-      nutritionText = `🌿 MANUFAA YA LISHE – ${crop.toUpperCase()}\nIna vitamini nyingi, madini na vioksidishaji. Lishe bora huanza shambani kwako.`;
-    } else if (isSpanish) {
-      nutritionText = `🌿 BENEFICIOS NUTRICIONALES – ${crop.toUpperCase()}\nRico en vitaminas, minerales y antioxidantes. Una dieta saludable comienza en su granja.`;
+    } else if (lowerCrop === 'bananas') {
+      // Add detailed banana nutrition if needed, otherwise fallback
+      if (isFrench) {
+        nutritionText = `🌿 NUTRITION ET BIENFAITS POUR LA SANTÉ – BANANAS\nPour 100g de produit frais\nNutriments Clés\n• Vitamine B6: 0.4 mg (24% VQ)\n• Vitamine C: 8.7 mg (10% VQ)\n• Potassium: 358 mg (8% VQ)\n• Manganèse: 0.3 mg (13% VQ)\n• Fibres: 2.6 g (9% VQ)\n• Magnésium: 27 mg (6% VQ)\n• Cuivre: 0.1 mg (8% VQ)\nBienfaits pour la Santé\nAime votre cœur – le potassium abaisse la tension\nDigestion facile – pectine\nÉnergie naturelle – glucides\nAntioxydant – dopamine et catéchines`;
+      } else if (isSwahili) {
+        nutritionText = `🌿 MANUFAA YA LISHE NA AFYA – NDIZI\nKwa gramu 100 za ndizi mbichi\nVirutubisho Muhimu\n• Vitamini B6: 0.4 mg (24% THK)\n• Vitamini C: 8.7 mg (10% THK)\n• Potasiamu: 358 mg (8% THK)\n• Manganese: 0.3 mg (13% THK)\n• Nyuzinyuzi: 2.6 g (9% THK)\n• Magnesiamu: 27 mg (6% THK)\n• Shaba: 0.1 mg (8% THK)\nManufaa ya Kiafya\nAfya ya moyo – potasiamu hupunguza shinikizo la damu\nUsagaji chakula – pectini husaidia\nNishati asili – wanga\nKinga dhidi ya vioksidishaji – dopamine na katekisimu`;
+      } else if (isSpanish) {
+        nutritionText = `🌿 BENEFICIOS NUTRICIONALES Y PARA LA SALUD – PLÁTANOS\nPor 100g de producto fresco\nNutrientes Clave\n• Vitamina B6: 0.4 mg (24% VD)\n• Vitamina C: 8.7 mg (10% VD)\n• Potasio: 358 mg (8% VD)\n• Manganeso: 0.3 mg (13% VD)\n• Fibra: 2.6 g (9% VD)\n• Magnesio: 27 mg (6% VD)\nBeneficios para la Salud\nCorazón – el potasio reduce la presión arterial\nDigestión – pectina\nEnergía natural – carbohidratos\nAntioxidante – dopamina y catequinas`;
+      } else {
+        nutritionText = `🌿 NUTRITION & HEALTH BENEFITS – BANANAS\nPer 100g fresh weight\nKey Nutrients\n• Vitamin B6: 0.4 mg (24% DV)\n• Vitamin C: 8.7 mg (10% DV)\n• Potassium: 358 mg (8% DV)\n• Manganese: 0.3 mg (13% DV)\n• Fiber: 2.6 g (9% DV)\n• Magnesium: 27 mg (6% DV)\n• Copper: 0.1 mg (8% DV)\nHealth Benefits\nHeart health – potassium lowers blood pressure\nDigestion – pectin\nNatural energy – carbohydrates\nAntioxidant – dopamine and catechins`;
+      }
     } else {
-      nutritionText = `🌿 NUTRITIONAL BENEFITS – ${crop.toUpperCase()}\nRich in vitamins, minerals, and antioxidants. A healthy diet starts on your farm.`;
+      // Generic fallback for other crops
+      if (isFrench) {
+        nutritionText = `🌿 BIENFAITS NUTRITIONNELS – ${crop.toUpperCase()}\nRiche en vitamines, minéraux et antioxydants. Une alimentation saine commence par votre ferme.`;
+      } else if (isSwahili) {
+        nutritionText = `🌿 MANUFAA YA LISHE – ${crop.toUpperCase()}\nIna vitamini nyingi, madini na vioksidishaji. Lishe bora huanza shambani kwako.`;
+      } else if (isSpanish) {
+        nutritionText = `🌿 BENEFICIOS NUTRICIONALES – ${crop.toUpperCase()}\nRico en vitaminas, minerales y antioxidantes. Una dieta saludable comienza en su granja.`;
+      } else {
+        nutritionText = `🌿 NUTRITIONAL BENEFITS – ${crop.toUpperCase()}\nRich in vitamins, minerals, and antioxidants. A healthy diet starts on your farm.`;
+      }
     }
     structuredList.push({ key: 'nutrition_benefits', params: { content: nutritionText } });
   }

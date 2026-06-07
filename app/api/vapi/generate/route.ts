@@ -1,4 +1,4 @@
-// app/api/vapi/generate/route.ts – with timeout fix
+// app/api/vapi/generate/route.ts – FULLY FIXED (extracts n,p,k from provides)
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/firebase/admin";
 import { FieldValue } from "firebase-admin/firestore";
@@ -12,7 +12,7 @@ import { COUNTRY_CURRENCY_MAP } from "@/lib/config/currency";
 
 console.log("Farmer Session Generation Route Loaded");
 
-// ========== TIMEOUT UTILITY ==========
+// ========== TIMEOUT UTILITY (increased to 300 seconds) ==========
 const withTimeout = <T>(promise: Promise<T>, ms: number, errorMessage: string = "Operation timed out"): Promise<T> => {
   let timeoutId: NodeJS.Timeout;
   const timeoutPromise = new Promise<T>((_, reject) => {
@@ -139,131 +139,138 @@ function getCurrencyForCountry(country: string = 'kenya'): { symbol: string; nam
   };
 }
 
+// ========== DEFAULT FERTILIZER PLAN (fallback) ==========
+function buildDefaultFertilizerPlan(crop: string, farmSize: number, spacingInfo: any | null) {
+  const dapKg = 50;
+  const ureaKg = 50;
+  const dapCost = 3500;
+  const ureaCost = 2800;
+  let plantsPerAcre = 20000;
+  if (spacingInfo && spacingInfo.plantsPerAcre) plantsPerAcre = spacingInfo.plantsPerAcre;
+  const totalPlants = plantsPerAcre * farmSize;
+  return {
+    totalCost: dapCost + ureaCost,
+    farmSize,
+    plantingRecommendations: [
+      { kgNeeded: dapKg, name: "DAP", cost: dapCost, n: 18, p: 46, k: 0, extraNutrients: "" }
+    ],
+    topDressingRecommendations: [
+      { kgNeeded: ureaKg, name: "UREA", cost: ureaCost, n: 46, p: 0, k: 0, extraNutrients: "" }
+    ],
+    perPlant: {
+      dapGrams: totalPlants ? (dapKg * 1000) / totalPlants : 0,
+      ureaGrams: totalPlants ? (ureaKg * 1000) / totalPlants : 0,
+      mopGrams: 0,
+      totalGrams: totalPlants ? ((dapKg + ureaKg) * 1000) / totalPlants : 0,
+    }
+  };
+}
+
+// ========== TRANSFORM FERTILIZER PLAN FOR ENGINE ==========
+// Converts plantingRecommendations[] → plantingFertilizer (object)
+// and topDressingRecommendations[] → topdressingFertilizers (array)
+// Extracts n, p, k from the "provides" object (which contains the actual kg values)
+function transformFertilizerPlanForEngine(plan: any): any {
+  if (!plan) return null;
+  const transformed: any = {
+    totalCost: plan.totalCost,
+    farmSize: plan.farmSize,
+    perPlant: plan.perPlant,
+  };
+
+  // Planting fertilizer
+  if (plan.plantingRecommendations && plan.plantingRecommendations.length > 0) {
+    const pf = plan.plantingRecommendations[0];
+    transformed.plantingFertilizer = {
+      fertilizerId: pf.fertilizerId,
+      brand: pf.brand,
+      name: pf.brand,                       // engine expects "name"
+      npk: pf.npk,
+      kgNeeded: pf.amountKg ?? pf.kgNeeded,
+      cost: pf.cost,
+      pricePer50kg: pf.pricePer50kg,
+      packageSizes: pf.packageSizes,
+      // Extract N, P, K from the "provides" object
+      n: pf.provides?.n ?? 0,
+      p: pf.provides?.p ?? 0,
+      k: pf.provides?.k ?? 0,
+      extraNutrients: pf.extraNutrients || "",
+    };
+  }
+
+  // Topdressing fertilizers
+  if (plan.topDressingRecommendations && plan.topDressingRecommendations.length > 0) {
+    transformed.topdressingFertilizers = plan.topDressingRecommendations.map((tf: any) => ({
+      fertilizerId: tf.fertilizerId,
+      brand: tf.brand,
+      name: tf.brand,
+      npk: tf.npk,
+      kgNeeded: tf.amountKg ?? tf.kgNeeded,
+      cost: tf.cost,
+      pricePer50kg: tf.pricePer50kg,
+      packageSizes: tf.packageSizes,
+      n: tf.provides?.n ?? 0,
+      p: tf.provides?.p ?? 0,
+      k: tf.provides?.k ?? 0,
+      extraNutrients: tf.extraNutrients || "",
+    }));
+  }
+
+  return transformed;
+}
+
 export async function POST(request: NextRequest) {
   try {
+    console.log("🚀🚀🚀 USING V4.1 ROUTE 🚀🚀🚀");
     const body = await request.json();
-
     const cookieLanguage = request.cookies.get('preferred-language')?.value;
     const bodyLanguage = body.language;
     const userLanguage = bodyLanguage || cookieLanguage || 'en';
     console.log(`🌐 Generating recommendations in language: ${userLanguage}`);
 
-    // Destructure all fields from frontend
-    const {
-      farmerName,
-      phoneNumber,
-      subCounty,
-      ward,
-      village,
-      totalFarmSize,
-      cultivatedAcres,
-      waterSources,
-      crops,
-      cropVarieties,
-      cropAcres,
-      plantingDate,
-      seedSource,
-      spacing,
-      seedRate,
-      usePlantingFertilizer,
-      plantingFertilizerType,
-      plantingFertilizerQuantity,
-      useTopdressingFertilizer,
-      topdressingFertilizerType,
-      topdressingFertilizerQuantity,
-      commonPests,
-      commonDiseases,
-      actualYieldKg,
-      pricePerKg,
-      storageMethod,
-      ploughingCost,
-      plantingLabourCost,
-      weedingCost,
-      harvestingCost,
-      transportCostTotal,
-      packagingCostTotal,
-      miscellaneousCostTotal,
-      hasDoneSoilTest,
-      soilTestDate,
-      soilTestPH,
-      soilTestPHRating,
-      soilTestP,
-      soilTestPRating,
-      soilTestK,
-      soilTestKRating,
-      soilTestNPercent,
-      soilTestNPercentRating,
-      soilTestCa,
-      soilTestCaRating,
-      soilTestMg,
-      soilTestMgRating,
-      soilTestNa,
-      soilTestNaRating,
-      soilTestOC,
-      soilTestOCRating,
-      soilTestOM,
-      soilTestOMRating,
-      soilTestCEC,
-      soilTestCECRating,
-      targetYield,
-      recCalciticLime,
-      recDolomiticLime,
-      recPlantingFertilizer,
-      recPlantingQuantity,
-      recTopdressingFertilizer,
-      recTopdressingQuantity,
-      recPotassiumFertilizer,
-      recPotassiumQuantity,
-      plantingFertilizerNutrients,
-      topdressingFertilizerNutrients,
-      potassiumFertilizerNutrients,
-      plantingFertilizerToUse,
-      plantingFertilizerCost,
-      topdressingFertilizerToUse,
-      topdressingFertilizerCost,
-      potassiumFertilizerToUse,
-      potassiumFertilizerCost,
+    // Destructure all fields from frontend (unchanged)
+    const { farmerName, phoneNumber, subCounty, ward, village, totalFarmSize, cultivatedAcres, waterSources,
+      crops, cropVarieties, cropAcres, plantingDate, seedSource, spacing, seedRate,
+      usePlantingFertilizer, plantingFertilizerType, plantingFertilizerQuantity,
+      useTopdressingFertilizer, topdressingFertilizerType, topdressingFertilizerQuantity,
+      commonPests, commonDiseases, actualYieldKg, pricePerKg, storageMethod,
+      ploughingCost, plantingLabourCost, weedingCost, harvestingCost,
+      transportCostTotal, packagingCostTotal, miscellaneousCostTotal,
+      hasDoneSoilTest, soilTestDate, soilTestPH, soilTestPHRating, soilTestP, soilTestPRating,
+      soilTestK, soilTestKRating, soilTestNPercent, soilTestNPercentRating,
+      soilTestCa, soilTestCaRating, soilTestMg, soilTestMgRating, soilTestNa, soilTestNaRating,
+      soilTestOC, soilTestOCRating, soilTestOM, soilTestOMRating, soilTestCEC, soilTestCECRating,
+      targetYield, recCalciticLime, recDolomiticLime,
+      recPlantingFertilizer, recPlantingQuantity,
+      recTopdressingFertilizer, recTopdressingQuantity,
+      recPotassiumFertilizer, recPotassiumQuantity,
+      plantingFertilizerNutrients, topdressingFertilizerNutrients, potassiumFertilizerNutrients,
+      plantingFertilizerToUse, plantingFertilizerCost,
+      topdressingFertilizerToUse, topdressingFertilizerCost,
+      potassiumFertilizerToUse, potassiumFertilizerCost,
       plantingFertilizerQuantity: plantingFertilizerQuantityKg,
       topdressingFertilizerQuantity: topdressingFertilizerQuantityKg,
       potassiumFertilizerQuantity: potassiumFertilizerQuantityKg,
-      calciticLimePricePerBag,
-      dolomiticLimePricePerBag,
-      plantsDamaged,
-      seedCost,
-      season,
-      county,
-      acres,
-      conservationPractices,
-      useCertifiedSeed,
-      seedQuantity,
-      userid,
-      country,
-      deficiencySymptoms,
-      deficiencyLocation,
-      wantsNutritionBenefits,
+      calciticLimePricePerBag, dolomiticLimePricePerBag,
+      plantsDamaged, seedCost, season, county, acres, conservationPractices,
+      useCertifiedSeed, seedQuantity, userid, country,
+      deficiencySymptoms, deficiencyLocation, wantsNutritionBenefits,
     } = body;
 
-    // Clean user input fields that often contain garbage
     const cleanedCommonPests = cleanUserInput(commonPests);
     const cleanedCommonDiseases = cleanUserInput(commonDiseases);
     const cleanedConservationPractices = cleanUserInput(conservationPractices);
 
     if (!crops || !county || !userid) {
       console.error("Missing required fields:", { crops, county, userid });
-      return NextResponse.json(
-        { error: "Missing required fields: crops, county, userid are required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing required fields: crops, county, userid are required" }, { status: 400 });
     }
 
-    // Get currency configuration for the selected country
     const currencyConfig = getCurrencyForCountry(country);
-
     const cropsArray = crops.split(",").map((c: string) => c.trim());
     const primaryCrop = cropsArray[0];
     const farmSize = parseFloat(cropAcres) || parseFloat(acres) || 1;
 
-    // === Planting advice ===
     let plantingAdvice = null;
     let plantingAdviceText = null;
     if (plantingDate && primaryCrop && country) {
@@ -272,7 +279,6 @@ export async function POST(request: NextRequest) {
       console.log(`🌱 Planting advice for ${primaryCrop} in ${country}/${county}: ${plantingAdvice}`);
     }
 
-    // === Spacing info ===
     let spacingInfo = null;
     let spacingWarning: string | null = null;
     if (spacing && primaryCrop) {
@@ -290,7 +296,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // === Validate yield and price ===
     let validatedYieldKg = parseFloat(actualYieldKg) || 0;
     let validatedPricePerKg = parseFloat(pricePerKg) || 0;
     let yieldWarnings: string[] = [];
@@ -305,7 +310,6 @@ export async function POST(request: NextRequest) {
       priceWarnings.push(`Using default price of ${validatedPricePerKg} ${currencyConfig.symbol}/kg for ${primaryCrop}`);
     }
 
-    // === Gross margin calculation (kg-based) ===
     const revenue = validatedYieldKg * validatedPricePerKg;
     const seedCostValue = parseFloat(seedCost) || 0;
     const ploughingCostValue = parseFloat(ploughingCost) || 0;
@@ -324,56 +328,34 @@ export async function POST(request: NextRequest) {
     const marginPercentage = totalCosts > 0 ? (grossMargin / revenue) * 100 : 0;
 
     const grossMarginAnalysis = {
-      crop: primaryCrop,
-      farmSize,
-      yieldKg: validatedYieldKg,
-      pricePerKg: validatedPricePerKg,
-      revenue,
-      seedCost: seedCostValue,
+      crop: primaryCrop, farmSize, yieldKg: validatedYieldKg, pricePerKg: validatedPricePerKg,
+      revenue, seedCost: seedCostValue,
       labourCosts: {
-        ploughing: ploughingCostValue,
-        planting: plantingLabourCostValue,
-        weeding: weedingCostValue,
-        harvesting: harvestingCostValue,
+        ploughing: ploughingCostValue, planting: plantingLabourCostValue,
+        weeding: weedingCostValue, harvesting: harvestingCostValue,
         total: ploughingCostValue + plantingLabourCostValue + weedingCostValue + harvestingCostValue
       },
-      transportCost: transportCostValue,
-      packagingCost: packagingCostValue,
-      miscellaneousCost: miscellaneousCostValue,
-      totalCosts,
-      grossMargin,
-      marginPercentage
+      transportCost: transportCostValue, packagingCost: packagingCostValue,
+      miscellaneousCost: miscellaneousCostValue, totalCosts, grossMargin, marginPercentage
     };
 
-    // === Soil test analysis and fertilizer plan ===
     let soilAnalysis = null;
     let fertilizerPlan = null;
 
     if (hasDoneSoilTest === "Yes" && soilTestDate) {
       try {
         const soilTestData = {
-          testDate: soilTestDate,
-          ph: parseFloat(soilTestPH) || 0,
-          phosphorus: parseFloat(soilTestP) || 0,
-          potassium: parseFloat(soilTestK) || 0,
-          calcium: parseFloat(soilTestCa) || 0,
-          magnesium: parseFloat(soilTestMg) || 0,
-          sodium: parseFloat(soilTestNa) || 0,
-          totalNitrogen: parseFloat(soilTestNPercent) || 0,
-          organicCarbon: parseFloat(soilTestOC) || 0,
-          organicMatter: parseFloat(soilTestOM) || 0,
-          cec: parseFloat(soilTestCEC) || 0,
-          phRating: soilTestPHRating || '',
-          phosphorusRating: soilTestPRating || '',
-          potassiumRating: soilTestKRating || '',
-          calciumRating: soilTestCaRating || '',
-          magnesiumRating: soilTestMgRating || '',
-          sodiumRating: soilTestNaRating || '',
-          totalNitrogenRating: soilTestNPercentRating || '',
-          organicCarbonRating: soilTestOCRating || '',
-          organicMatterRating: soilTestOMRating || '',
-          cecRating: soilTestCECRating || '',
-          targetYield: targetYield ? parseFloat(targetYield) : null,
+          testDate: soilTestDate, ph: parseFloat(soilTestPH) || 0,
+          phosphorus: parseFloat(soilTestP) || 0, potassium: parseFloat(soilTestK) || 0,
+          calcium: parseFloat(soilTestCa) || 0, magnesium: parseFloat(soilTestMg) || 0,
+          sodium: parseFloat(soilTestNa) || 0, totalNitrogen: parseFloat(soilTestNPercent) || 0,
+          organicCarbon: parseFloat(soilTestOC) || 0, organicMatter: parseFloat(soilTestOM) || 0,
+          cec: parseFloat(soilTestCEC) || 0, phRating: soilTestPHRating || '',
+          phosphorusRating: soilTestPRating || '', potassiumRating: soilTestKRating || '',
+          calciumRating: soilTestCaRating || '', magnesiumRating: soilTestMgRating || '',
+          sodiumRating: soilTestNaRating || '', totalNitrogenRating: soilTestNPercentRating || '',
+          organicCarbonRating: soilTestOCRating || '', organicMatterRating: soilTestOMRating || '',
+          cecRating: soilTestCECRating || '', targetYield: targetYield ? parseFloat(targetYield) : null,
           recCalciticLime: recCalciticLime ? parseFloat(recCalciticLime) : null,
           recPlantingFertilizer: recPlantingFertilizer || null,
           recPlantingQuantity: recPlantingQuantity ? parseFloat(recPlantingQuantity) : null,
@@ -384,62 +366,25 @@ export async function POST(request: NextRequest) {
           plantingFertilizerNutrients: plantingFertilizerNutrients || null,
           topdressingFertilizerNutrients: topdressingFertilizerNutrients || null,
           potassiumFertilizerNutrients: potassiumFertilizerNutrients || null,
-          crops: primaryCrop,
-          cropAcres: farmSize
+          crops: primaryCrop, cropAcres: farmSize
         };
-
         soilAnalysis = soilTestInterpreter.interpretSoilTest(soilTestData);
-        soilAnalysis = {
-          ...soilAnalysis,
-          ph: parseFloat(soilTestPH) || 0,
-          phRating: soilTestPHRating || 'Not tested',
-          phosphorus: parseFloat(soilTestP) || 0,
-          phosphorusRating: soilTestPRating || 'Not tested',
-          potassium: parseFloat(soilTestK) || 0,
-          potassiumRating: soilTestKRating || 'Not tested',
-          calcium: parseFloat(soilTestCa) || 0,
-          calciumRating: soilTestCaRating || 'Not tested',
-          magnesium: parseFloat(soilTestMg) || 0,
-          magnesiumRating: soilTestMgRating || 'Not tested',
-          sodium: parseFloat(soilTestNa) || 0,
-          sodiumRating: soilTestNaRating || 'Not tested',
-          totalNitrogen: parseFloat(soilTestNPercent) || 0,
-          totalNitrogenRating: soilTestNPercentRating || 'Not tested',
-          organicMatter: parseFloat(soilTestOM) || 0,
-          organicMatterRating: soilTestOMRating || 'Not tested',
-          organicCarbon: parseFloat(soilTestOC) || 0,
-          organicCarbonRating: soilTestOCRating || 'Not tested',
-          cec: parseFloat(soilTestCEC) || 0,
-          cecRating: soilTestCECRating || 'Not tested',
-        };
-
-        console.log("📊 Soil Analysis created:", {
-          ph: soilAnalysis.ph,
-          phRating: soilAnalysis.phRating,
-          phosphorus: soilAnalysis.phosphorus,
-          phosphorusRating: soilAnalysis.phosphorusRating,
-        });
+        soilAnalysis = { ...soilAnalysis, ...soilTestData };
+        console.log("📊 Soil Analysis created");
 
         const hasRecommendations = recPlantingFertilizer || recTopdressingFertilizer || recPotassiumFertilizer;
         const hasUserSelections = plantingFertilizerToUse || topdressingFertilizerToUse || potassiumFertilizerToUse;
 
         if (hasRecommendations || hasUserSelections) {
           console.log("📊 Calculating fertilizer plan with:", {
-            recPlantingFertilizer,
-            recPlantingQuantity,
-            recTopdressingFertilizer,
-            recTopdressingQuantity,
-            recPotassiumFertilizer,
-            recPotassiumQuantity,
-            plantingFertilizerToUse,
-            topdressingFertilizerToUse,
-            potassiumFertilizerToUse,
+            recPlantingFertilizer, recPlantingQuantity,
+            recTopdressingFertilizer, recTopdressingQuantity,
+            recPotassiumFertilizer, recPotassiumQuantity,
+            plantingFertilizerToUse, topdressingFertilizerToUse, potassiumFertilizerToUse
           });
-
           fertilizerPlan = fertilizerCalculator.calculateFromRecommendations(
             {
-              targetYield: soilTestData.targetYield ||
-                soilTestInterpreter.getYieldCategory(primaryCrop, 'medium') * 1000 || 2000,
+              targetYield: soilTestData.targetYield || 2000,
               plantingFertilizer: recPlantingFertilizer || "",
               plantingQuantity: recPlantingQuantity ? parseFloat(recPlantingQuantity) : 50,
               topdressingFertilizer: recTopdressingFertilizer || "",
@@ -457,12 +402,8 @@ export async function POST(request: NextRequest) {
               topdressingCost: topdressingFertilizerCost ? parseFloat(topdressingFertilizerCost) : 0,
               potassiumCost: potassiumFertilizerCost ? parseFloat(potassiumFertilizerCost) : 0
             },
-            farmSize,
-            spacingInfo,
-            country || 'kenya',
-            primaryCrop
+            farmSize, spacingInfo, country || 'kenya', primaryCrop
           );
-
           console.log("✅ Fertilizer plan calculated:", fertilizerPlan ? {
             totalCost: fertilizerPlan.totalCost,
             plantingCount: fertilizerPlan.plantingRecommendations?.length,
@@ -474,26 +415,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // === FALLBACK: if no fertilizerPlan (e.g., no soil test or no recommendations), create a default plan ===
+    if (!fertilizerPlan) {
+      console.log("⚠️ No fertilizer plan from soil test, using default plan");
+      fertilizerPlan = buildDefaultFertilizerPlan(primaryCrop, farmSize, spacingInfo);
+    }
+
+    // === LOG RAW PLAN ===
+    console.log("🔍 Raw fertilizerPlan before transform:", JSON.stringify(fertilizerPlan, null, 2));
+
+    // === TRANSFORM (with extraction of n,p,k from provides) ===
+    const engineFertilizerPlan = transformFertilizerPlanForEngine(fertilizerPlan);
+    console.log("🔍 Transformed engineFertilizerPlan:", JSON.stringify(engineFertilizerPlan, null, 2));
+
     // === Generate recommendations (with caching) ===
     let recommendationsOutput = null;
     const cacheKey = getCacheKey({
-      userLanguage,
-      primaryCrop,
-      hasDoneSoilTest,
-      farmSize,
-      soilTestPH,
-      soilTestP,
-      soilTestK,
-      actualYieldKg: validatedYieldKg,
-      pricePerKg: validatedPricePerKg,
-      totalCosts,
-      country,
-      plantsDamaged,
-      deficiencySymptoms,
-      deficiencyLocation,
-      spacing,
-      storageMethod,
-      wantsNutritionBenefits,
+      userLanguage, primaryCrop, hasDoneSoilTest, farmSize,
+      soilTestPH, soilTestP, soilTestK, actualYieldKg: validatedYieldKg,
+      pricePerKg: validatedPricePerKg, totalCosts, country, plantsDamaged,
+      deficiencySymptoms, deficiencyLocation, spacing, storageMethod, wantsNutritionBenefits
     });
 
     if (cache.has(cacheKey)) {
@@ -509,18 +450,16 @@ export async function POST(request: NextRequest) {
     if (!recommendationsOutput) {
       console.log("📋 Generating fresh recommendations for:", primaryCrop);
       try {
-        // *** ADD TIMEOUT HERE (120 seconds) ***
         recommendationsOutput = await withTimeout(
           generateRecommendations({
             hasSoilTest: hasDoneSoilTest === "Yes",
             soilAnalysis,
-            fertilizerPlan,
+            fertilizerPlan: engineFertilizerPlan,
             crop: primaryCrop,
             crops: cropsArray,
             farmerData: {
               farmerName: farmerName || 'Farmer',
-              usePlantingFertilizer,
-              useTopdressingFertilizer,
+              usePlantingFertilizer, useTopdressingFertilizer,
               conservationPractices: cleanedConservationPractices,
               commonPests: cleanedCommonPests,
               commonDiseases: cleanedCommonDiseases,
@@ -535,8 +474,7 @@ export async function POST(request: NextRequest) {
               dolomiticLimePricePerBag: dolomiticLimePricePerBag ? parseFloat(dolomiticLimePricePerBag) : 300,
               plantsDamaged: plantsDamaged ? parseInt(plantsDamaged) : null,
               language: userLanguage,
-              deficiencySymptoms,
-              deficiencyLocation,
+              deficiencySymptoms, deficiencyLocation,
               spacing: spacing,
               storageMethod: storageMethod,
               wantsNutritionBenefits: wantsNutritionBenefits === true || wantsNutritionBenefits === "Yes",
@@ -544,14 +482,10 @@ export async function POST(request: NextRequest) {
               currencyName: currencyConfig.name,
             }
           }),
-          120000, // 120 seconds timeout
-          "Recommendation generation timed out after 120 seconds"
+          600000, // 10 minutes timeout (to be safe)
+          "Recommendation generation timed out after 600 seconds"
         );
-
-        cache.set(cacheKey, {
-          data: recommendationsOutput,
-          timestamp: Date.now(),
-        });
+        cache.set(cacheKey, { data: recommendationsOutput, timestamp: Date.now() });
         console.log("✅ Recommendations generated and cached");
       } catch (error: any) {
         console.error("❌ Error generating recommendations:", error);
@@ -588,20 +522,10 @@ export async function POST(request: NextRequest) {
       crops: cropsArray,
       primaryCrop,
       cropAcres: farmSize,
-      yieldData: {
-        actualKg: validatedYieldKg,
-        pricePerKg: validatedPricePerKg,
-        revenue: revenue,
-        warnings: [...yieldWarnings, ...priceWarnings]
-      },
+      yieldData: { actualKg: validatedYieldKg, pricePerKg: validatedPricePerKg, revenue, warnings: [...yieldWarnings, ...priceWarnings] },
       seedCost: seedCostValue,
       seedRate: parseFloat(seedRate) || parseFloat(seedQuantity) || null,
-      labourCosts: {
-        ploughing: ploughingCostValue,
-        planting: plantingLabourCostValue,
-        weeding: weedingCostValue,
-        harvesting: harvestingCostValue
-      },
+      labourCosts: { ploughing: ploughingCostValue, planting: plantingLabourCostValue, weeding: weedingCostValue, harvesting: harvestingCostValue },
       transportCostTotal: transportCostValue,
       packagingCostTotal: packagingCostValue,
       miscellaneousCostTotal: miscellaneousCostValue,
@@ -628,45 +552,24 @@ export async function POST(request: NextRequest) {
         perPlant: fertilizerPlan.perPlant
       } : null,
       soilTest: hasDoneSoilTest === "Yes" ? {
-        testDate: soilTestDate,
-        ph: soilTestPH ? parseFloat(soilTestPH) : null,
-        phRating: soilTestPHRating,
-        phosphorus: soilTestP ? parseFloat(soilTestP) : null,
-        phosphorusRating: soilTestPRating,
-        potassium: soilTestK ? parseFloat(soilTestK) : null,
-        potassiumRating: soilTestKRating,
-        totalNitrogen: soilTestNPercent ? parseFloat(soilTestNPercent) : null,
-        totalNitrogenRating: soilTestNPercentRating,
-        calcium: soilTestCa ? parseFloat(soilTestCa) : null,
-        calciumRating: soilTestCaRating,
-        magnesium: soilTestMg ? parseFloat(soilTestMg) : null,
-        magnesiumRating: soilTestMgRating,
-        sodium: soilTestNa ? parseFloat(soilTestNa) : null,
-        sodiumRating: soilTestNaRating,
-        organicCarbon: soilTestOC ? parseFloat(soilTestOC) : null,
-        organicCarbonRating: soilTestOCRating,
-        organicMatter: soilTestOM ? parseFloat(soilTestOM) : null,
-        organicMatterRating: soilTestOMRating,
-        cec: soilTestCEC ? parseFloat(soilTestCEC) : null,
-        cecRating: soilTestCECRating,
+        testDate: soilTestDate, ph: soilTestPH ? parseFloat(soilTestPH) : null, phRating: soilTestPHRating,
+        phosphorus: soilTestP ? parseFloat(soilTestP) : null, phosphorusRating: soilTestPRating,
+        potassium: soilTestK ? parseFloat(soilTestK) : null, potassiumRating: soilTestKRating,
+        totalNitrogen: soilTestNPercent ? parseFloat(soilTestNPercent) : null, totalNitrogenRating: soilTestNPercentRating,
+        calcium: soilTestCa ? parseFloat(soilTestCa) : null, calciumRating: soilTestCaRating,
+        magnesium: soilTestMg ? parseFloat(soilTestMg) : null, magnesiumRating: soilTestMgRating,
+        sodium: soilTestNa ? parseFloat(soilTestNa) : null, sodiumRating: soilTestNaRating,
+        organicCarbon: soilTestOC ? parseFloat(soilTestOC) : null, organicCarbonRating: soilTestOCRating,
+        organicMatter: soilTestOM ? parseFloat(soilTestOM) : null, organicMatterRating: soilTestOMRating,
+        cec: soilTestCEC ? parseFloat(soilTestCEC) : null, cecRating: soilTestCECRating,
         targetYield: targetYield ? parseFloat(targetYield) : null,
         recCalciticLime: recCalciticLime ? parseFloat(recCalciticLime) : null,
         recDolomiticLime: recDolomiticLime ? parseFloat(recDolomiticLime) : null,
-        recPlantingFertilizer: recPlantingFertilizer || null,
-        recPlantingQuantity: recPlantingQuantity ? parseFloat(recPlantingQuantity) : null,
-        recTopdressingFertilizer: recTopdressingFertilizer || null,
-        recTopdressingQuantity: recTopdressingQuantity ? parseFloat(recTopdressingQuantity) : null,
-        recPotassiumFertilizer: recPotassiumFertilizer || null,
-        recPotassiumQuantity: recPotassiumQuantity ? parseFloat(recPotassiumQuantity) : null,
-        plantingFertilizerNutrients: plantingFertilizerNutrients || null,
-        topdressingFertilizerNutrients: topdressingFertilizerNutrients || null,
-        potassiumFertilizerNutrients: potassiumFertilizerNutrients || null,
-        plantingFertilizerToUse: plantingFertilizerToUse || null,
-        plantingFertilizerCost: plantingFertilizerCost ? parseFloat(plantingFertilizerCost) : null,
-        topdressingFertilizerToUse: topdressingFertilizerToUse || null,
-        topdressingFertilizerCost: topdressingFertilizerCost ? parseFloat(topdressingFertilizerCost) : null,
-        potassiumFertilizerToUse: potassiumFertilizerToUse || null,
-        potassiumFertilizerCost: potassiumFertilizerCost ? parseFloat(potassiumFertilizerCost) : null,
+        recPlantingFertilizer, recPlantingQuantity, recTopdressingFertilizer, recTopdressingQuantity,
+        recPotassiumFertilizer, recPotassiumQuantity,
+        plantingFertilizerNutrients, topdressingFertilizerNutrients, potassiumFertilizerNutrients,
+        plantingFertilizerToUse, plantingFertilizerCost, topdressingFertilizerToUse, topdressingFertilizerCost,
+        potassiumFertilizerToUse, potassiumFertilizerCost,
       } : null,
       useCertifiedSeed: useCertifiedSeed === "yes",
       deficiencySymptoms: deficiencySymptoms || null,
@@ -674,21 +577,15 @@ export async function POST(request: NextRequest) {
       wantsNutritionBenefits: wantsNutritionBenefits === true || wantsNutritionBenefits === "Yes",
       plantsDamaged: plantsDamaged ? parseInt(plantsDamaged) : null,
       metadata: {
-        warnings: {
-          yield: yieldWarnings,
-          price: priceWarnings,
-          spacing: spacingWarning ? [spacingWarning] : []
-        },
+        warnings: { yield: yieldWarnings, price: priceWarnings, spacing: spacingWarning ? [spacingWarning] : [] },
         createdAt: new Date().toISOString(),
         source: "logic-based",
-        version: "3.0-kg-only"
+        version: "4.0-fixed"
       }
     };
 
     await sessionRef.set(farmerSession);
-    console.log(`✅ Saved farmer session ${sessionId} for ${primaryCrop}: ${validatedYieldKg.toLocaleString()} kg @ ${validatedPricePerKg} ${currencyConfig.symbol}/kg = ${revenue.toLocaleString()} ${currencyConfig.symbol} revenue`);
-    console.log(`📋 Recommendations count: ${recommendationsOutput.list.length}`);
-    console.log(`💰 Total costs breakdown: Transport: ${transportCostValue}, Packaging: ${packagingCostValue}, Misc: ${miscellaneousCostValue}`);
+    console.log(`✅ Saved farmer session ${sessionId} for ${primaryCrop}. Recommendations count: ${recommendationsOutput.structuredList?.length || 0}`);
 
     return NextResponse.json({
       success: true,
@@ -705,17 +602,14 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     console.error("API Route Error:", error);
-    return NextResponse.json({
-      success: false,
-      error: error.message || "Unknown error occurred"
-    }, { status: 500 });
+    return NextResponse.json({ success: false, error: error.message || "Unknown error occurred" }, { status: 500 });
   }
 }
 
 export async function GET() {
   return NextResponse.json({
     status: "operational",
-    message: "Farmer Session Generation API - KG ONLY with Simplified Costs + Caching + Unified Currency + Timeout",
-    version: "3.3"
+    message: "Farmer Session Generation API - FULL 19-SLOT OUTPUT + 10 MIN TIMEOUT + LOGS + FIXED N,P,K",
+    version: "4.3"
   });
 }
