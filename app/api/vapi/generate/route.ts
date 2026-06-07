@@ -1,18 +1,17 @@
-// app/api/vapi/generate/route.ts – FULLY FIXED (extracts n,p,k from provides)
+// app/api/vapi/generate/route.ts – FINAL: 19 slots, costs fixed, no NaN
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/firebase/admin";
 import { FieldValue } from "firebase-admin/firestore";
 import { soilTestInterpreter } from "@/lib/soilTestInterpreter";
 import { fertilizerCalculator } from "@/lib/fertilizerCalculator";
 import { generateRecommendations } from "@/lib/recommendationEngine";
-import { calculateGrossMarginFromFarmerData, convertToKg, validateYield, validatePrice } from "@/lib/utils";
 import { getSpacingOptions } from "@/lib/data/spacing";
 import { getPlantingAdvice, getPlantingAdviceText } from "@/lib/data/plantingDates";
 import { COUNTRY_CURRENCY_MAP } from "@/lib/config/currency";
 
 console.log("Farmer Session Generation Route Loaded");
 
-// ========== TIMEOUT UTILITY (increased to 300 seconds) ==========
+// ========== TIMEOUT UTILITY ==========
 const withTimeout = <T>(promise: Promise<T>, ms: number, errorMessage: string = "Operation timed out"): Promise<T> => {
   let timeoutId: NodeJS.Timeout;
   const timeoutPromise = new Promise<T>((_, reject) => {
@@ -21,9 +20,9 @@ const withTimeout = <T>(promise: Promise<T>, ms: number, errorMessage: string = 
   return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
 };
 
-// ========== CACHING IMPLEMENTATION ==========
+// ========== CACHING ==========
 const cache = new Map();
-const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+const CACHE_TTL = 10 * 60 * 1000;
 
 function getCacheKey(inputs: any): string {
   const {
@@ -66,7 +65,6 @@ function getCacheKey(inputs: any): string {
   });
 }
 
-// Helper to clean user input (remove garbage like "Underscore nutrition." or random proper names)
 function cleanUserInput(input: string | undefined): string | undefined {
   if (!input) return input;
   return input.split(',')
@@ -75,12 +73,11 @@ function cleanUserInput(input: string | undefined): string | undefined {
       item.length > 0 &&
       !item.includes('_') &&
       !item.toLowerCase().includes('underscore') &&
-      !/^[A-Z][a-z]+ [A-Z][a-z]+\.?$/.test(item) // removes random "Daniel Enterprises Profitability."-like phrases
+      !/^[A-Z][a-z]+ [A-Z][a-z]+\.?$/.test(item)
     )
     .join(', ');
 }
 
-// Default yields in KG per acre
 const defaultYieldsKg: Record<string, number> = {
   maize: 2700, rice: 2700, wheat: 2000, barley: 2000, sorghum: 1500, millet: 1200,
   beans: 1200, cowpeas: 800, "green grams": 800, groundnuts: 1000, "soya beans": 1000,
@@ -117,7 +114,6 @@ function getDefaultPricePerKg(crop: string): number {
   return defaultPrices[key] || 40;
 }
 
-// ========== UPDATED CURRENCY FORMATTER USING SHARED MAP ==========
 function formatCurrencyForCountry(amount: number, country: string = 'kenya'): string {
   const normalizedCountry = country.toLowerCase();
   const currency = COUNTRY_CURRENCY_MAP[normalizedCountry] || COUNTRY_CURRENCY_MAP.kenya;
@@ -139,7 +135,6 @@ function getCurrencyForCountry(country: string = 'kenya'): { symbol: string; nam
   };
 }
 
-// ========== DEFAULT FERTILIZER PLAN (fallback) ==========
 function buildDefaultFertilizerPlan(crop: string, farmSize: number, spacingInfo: any | null) {
   const dapKg = 50;
   const ureaKg = 50;
@@ -166,10 +161,7 @@ function buildDefaultFertilizerPlan(crop: string, farmSize: number, spacingInfo:
   };
 }
 
-// ========== TRANSFORM FERTILIZER PLAN FOR ENGINE ==========
-// Converts plantingRecommendations[] → plantingFertilizer (object)
-// and topDressingRecommendations[] → topdressingFertilizers (array)
-// Extracts n, p, k from the "provides" object (which contains the actual kg values)
+// ========== TRANSFORMATION WITH COST CALCULATION ==========
 function transformFertilizerPlanForEngine(plan: any): any {
   if (!plan) return null;
   const transformed: any = {
@@ -181,16 +173,18 @@ function transformFertilizerPlanForEngine(plan: any): any {
   // Planting fertilizer
   if (plan.plantingRecommendations && plan.plantingRecommendations.length > 0) {
     const pf = plan.plantingRecommendations[0];
+    const amountKg = pf.amountKg ?? pf.kgNeeded ?? 0;
+    const pricePer50kg = pf.pricePer50kg ?? 0;
+    const totalCost = (amountKg / 50) * pricePer50kg;
     transformed.plantingFertilizer = {
       fertilizerId: pf.fertilizerId,
       brand: pf.brand,
-      name: pf.brand,                       // engine expects "name"
+      name: pf.brand,
       npk: pf.npk,
-      kgNeeded: pf.amountKg ?? pf.kgNeeded,
-      cost: pf.cost,
+      kgNeeded: amountKg,
+      cost: totalCost,
       pricePer50kg: pf.pricePer50kg,
       packageSizes: pf.packageSizes,
-      // Extract N, P, K from the "provides" object
       n: pf.provides?.n ?? 0,
       p: pf.provides?.p ?? 0,
       k: pf.provides?.k ?? 0,
@@ -200,20 +194,25 @@ function transformFertilizerPlanForEngine(plan: any): any {
 
   // Topdressing fertilizers
   if (plan.topDressingRecommendations && plan.topDressingRecommendations.length > 0) {
-    transformed.topdressingFertilizers = plan.topDressingRecommendations.map((tf: any) => ({
-      fertilizerId: tf.fertilizerId,
-      brand: tf.brand,
-      name: tf.brand,
-      npk: tf.npk,
-      kgNeeded: tf.amountKg ?? tf.kgNeeded,
-      cost: tf.cost,
-      pricePer50kg: tf.pricePer50kg,
-      packageSizes: tf.packageSizes,
-      n: tf.provides?.n ?? 0,
-      p: tf.provides?.p ?? 0,
-      k: tf.provides?.k ?? 0,
-      extraNutrients: tf.extraNutrients || "",
-    }));
+    transformed.topdressingFertilizers = plan.topDressingRecommendations.map((tf: any) => {
+      const amountKg = tf.amountKg ?? tf.kgNeeded ?? 0;
+      const pricePer50kg = tf.pricePer50kg ?? 0;
+      const totalCost = (amountKg / 50) * pricePer50kg;
+      return {
+        fertilizerId: tf.fertilizerId,
+        brand: tf.brand,
+        name: tf.brand,
+        npk: tf.npk,
+        kgNeeded: amountKg,
+        cost: totalCost,
+        pricePer50kg: tf.pricePer50kg,
+        packageSizes: tf.packageSizes,
+        n: tf.provides?.n ?? 0,
+        p: tf.provides?.p ?? 0,
+        k: tf.provides?.k ?? 0,
+        extraNutrients: tf.extraNutrients || "",
+      };
+    });
   }
 
   return transformed;
@@ -221,15 +220,15 @@ function transformFertilizerPlanForEngine(plan: any): any {
 
 export async function POST(request: NextRequest) {
   try {
-    console.log("🚀🚀🚀 USING V4.1 ROUTE 🚀🚀🚀");
+    console.log("🚀🚀🚀 USING V4.3 ROUTE (Costs Fixed) 🚀🚀🚀");
     const body = await request.json();
     const cookieLanguage = request.cookies.get('preferred-language')?.value;
     const bodyLanguage = body.language;
     const userLanguage = bodyLanguage || cookieLanguage || 'en';
     console.log(`🌐 Generating recommendations in language: ${userLanguage}`);
 
-    // Destructure all fields from frontend (unchanged)
-    const { farmerName, phoneNumber, subCounty, ward, village, totalFarmSize, cultivatedAcres, waterSources,
+    const {
+      farmerName, phoneNumber, subCounty, ward, village, totalFarmSize, cultivatedAcres, waterSources,
       crops, cropVarieties, cropAcres, plantingDate, seedSource, spacing, seedRate,
       usePlantingFertilizer, plantingFertilizerType, plantingFertilizerQuantity,
       useTopdressingFertilizer, topdressingFertilizerType, topdressingFertilizerQuantity,
@@ -415,20 +414,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // === FALLBACK: if no fertilizerPlan (e.g., no soil test or no recommendations), create a default plan ===
     if (!fertilizerPlan) {
       console.log("⚠️ No fertilizer plan from soil test, using default plan");
       fertilizerPlan = buildDefaultFertilizerPlan(primaryCrop, farmSize, spacingInfo);
     }
 
-    // === LOG RAW PLAN ===
     console.log("🔍 Raw fertilizerPlan before transform:", JSON.stringify(fertilizerPlan, null, 2));
-
-    // === TRANSFORM (with extraction of n,p,k from provides) ===
     const engineFertilizerPlan = transformFertilizerPlanForEngine(fertilizerPlan);
     console.log("🔍 Transformed engineFertilizerPlan:", JSON.stringify(engineFertilizerPlan, null, 2));
 
-    // === Generate recommendations (with caching) ===
     let recommendationsOutput = null;
     const cacheKey = getCacheKey({
       userLanguage, primaryCrop, hasDoneSoilTest, farmSize,
@@ -482,7 +476,7 @@ export async function POST(request: NextRequest) {
               currencyName: currencyConfig.name,
             }
           }),
-          600000, // 10 minutes timeout (to be safe)
+          600000,
           "Recommendation generation timed out after 600 seconds"
         );
         cache.set(cacheKey, { data: recommendationsOutput, timestamp: Date.now() });
@@ -504,7 +498,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // === Save to Firestore ===
     const sessionRef = db.collection("farmer_sessions").doc();
     const sessionId = sessionRef.id;
 
@@ -580,7 +573,7 @@ export async function POST(request: NextRequest) {
         warnings: { yield: yieldWarnings, price: priceWarnings, spacing: spacingWarning ? [spacingWarning] : [] },
         createdAt: new Date().toISOString(),
         source: "logic-based",
-        version: "4.0-fixed"
+        version: "4.3-cost-fixed"
       }
     };
 
@@ -609,7 +602,7 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   return NextResponse.json({
     status: "operational",
-    message: "Farmer Session Generation API - FULL 19-SLOT OUTPUT + 10 MIN TIMEOUT + LOGS + FIXED N,P,K",
+    message: "Farmer Session Generation API - FULL 19-SLOT OUTPUT + COSTS FIXED",
     version: "4.3"
   });
 }
