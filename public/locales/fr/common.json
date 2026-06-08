@@ -1324,7 +1324,36 @@
 
   "gap_remember": "RAPPELEZ-VOUS : Chaque pratique que vous réalisez bien met plus d'argent dans votre poche.",
 
+"planting_fertilizer_title": "ENGRAIS DE PLANTATION (À appliquer à la plantation)",
+"planting_fertilizer_buy": "Achetez {{kg}} kg de {{name}}",
+"planting_fertilizer_cost": "Coût : {{cost}}",
+"planting_fertilizer_provides": "Apporte : {{n}} kg N, {{p}} kg P, {{k}} kg K",
+"planting_fertilizer_extra": "Nutriments supplémentaires : {{nutrients}}",
 
+"topdressing_fertilizer_title": "ENGRAIS DE COUVERTURE (À appliquer 3-4 semaines après la plantation)",
+"topdressing_fertilizer_buy": "Achetez {{kg}} kg de {{name}}",
+"topdressing_fertilizer_cost": "Coût : {{cost}}",
+"topdressing_fertilizer_provides": "Apporte : {{n}} kg N, {{p}} kg P, {{k}} kg K",
+"topdressing_fertilizer_extra": "Nutriments supplémentaires : {{nutrients}}",
+
+"calcitic_lime_need": "D'après votre analyse de sol, vous avez besoin de {{0}} kg de chaux calcique par acre.",
+"calcitic_lime_bags": "Cela représente {{0}} sacs de 50 kg.",
+"calcitic_lime_cost": "Coût : {{0}} ({{1}} par sac)",
+"calcitic_lime_why_acidic_low_ca": "Pourquoi : Votre pH est {{0}} (acide) et votre calcium est faible ({{1}} ppm). La chaux calcique résout les deux problèmes !",
+"calcitic_lime_why_acidic": "Pourquoi : Votre pH est {{0}} (acide). La chaux calcique augmentera le pH et ajoutera du calcium.",
+"calcitic_lime_why_low_ca": "Pourquoi : Votre calcium est faible ({{0}} ppm). La chaux calcique ajoute du calcium sans ajouter de magnésium.",
+"calcitic_lime_application": "Appliquez 3-4 semaines avant la plantation et incorporez dans les 10-15 premiers cm de sol.",
+"calcitic_lime_wait": "Attendez 1-2 semaines avant d'appliquer des engrais azotés.",
+"calcitic_lime_business_case": "ARGUMENT COMMERCIAL : Un pH correct peut augmenter l'absorption des nutriments de 30 à 50 % !",
+"calcitic_lime_yearly": "ANALYSEZ LE SOL CHAQUE ANNÉE pour savoir quand réappliquer.",
+
+"dolomitic_lime_need": "D'après votre analyse de sol, vous avez besoin de {{0}} kg de chaux dolomitique par acre.",
+"dolomitic_lime_bags": "Cela représente {{0}} sacs de 50 kg.",
+"dolomitic_lime_cost": "Coût : {{0}} ({{1}} par sac)",
+"dolomitic_lime_application": "Appliquez 3-4 semaines avant la plantation et incorporez dans les 10-15 premiers cm de sol.",
+"dolomitic_lime_wait": "Attendez 1-2 semaines avant d'appliquer des engrais azotés.",
+"dolomitic_lime_business_case": "ARGUMENT COMMERCIAL : Un magnésium adéquat améliore la synthèse de la chlorophylle et la photosynthèse !",
+"dolomitic_lime_yearly": "ANALYSEZ LE SOL CHAQUE ANNÉE pour savoir quand réappliquer.",
 
 
 "question_seed_rate_lettuce": "Quel taux de semences utiliserez-vous par acre pour votre entreprise de laitue? (grammes par acre) - Recommandé: 200g/acre",

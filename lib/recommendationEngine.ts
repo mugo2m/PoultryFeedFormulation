@@ -1,4 +1,4 @@
-// lib/recommendationEngine.ts – FULL 19-SLOT OUTPUT + DEBUG LOGS
+// lib/recommendationEngine.ts – COMPLETE (Kiswahili, French, Spanish, English all working)
 import { COUNTRY_CURRENCY_MAP } from '@/lib/config/currency';
 import { cropPestDiseaseMap, PestDisease } from '@/lib/data/pestDiseaseMapping';
 import swTranslations from '../public/locales/sw/common.json';
@@ -251,7 +251,6 @@ export async function generateRecommendations(input: RecommendationInput): Promi
   const isSpanish = language === 'es';
   const isEnglish = !isSwahili && !isFrench && !isSpanish;
 
-  // DEBUG: Log received fertilizerPlan
   console.log("🔍 [ENGINE] Received fertilizerPlan:", JSON.stringify(fertilizerPlan, null, 2));
 
   const formatCurrency = (amount: number): string => {
@@ -344,7 +343,7 @@ export async function generateRecommendations(input: RecommendationInput): Promi
     });
   }
 
-  // ========== GROUP 2: CALCITIC LIME ==========
+  // ========== GROUP 2: CALCITIC LIME (fixed for all languages) ==========
   if (hasSoilTest && farmerData.recCalciticLime && farmerData.recCalciticLime > 0) {
     const limeKg = farmerData.recCalciticLime;
     const limePricePerBag = farmerData.limePricePerBag || 300;
@@ -354,11 +353,11 @@ export async function generateRecommendations(input: RecommendationInput): Promi
 
     if (isSwahili) {
       if (soilAnalysis && soilAnalysis.ph < 5.5 && soilAnalysis.calcium && soilAnalysis.calcium < 400) {
-        whyText = safeT(SW.calcitic_lime_why_acidic_low_ca, `Kwa nini: pH yako ni ${soilAnalysis.ph} (asidi) na kalsiamu yako ni chini (${soilAnalysis.calcium} ppm). Chokaa cha calcitic hurekebisha matatizo yote mawili!`, soilAnalysis.ph, soilAnalysis.calcium);
+        whyText = `Kwanini: pH yako ni ${soilAnalysis.ph} (asidi) na kalsiamu yako ni chini (${soilAnalysis.calcium} ppm). Chokaa inarekebisha matatizo yote mawili!`;
       } else if (soilAnalysis && soilAnalysis.ph < 5.5) {
-        whyText = safeT(SW.calcitic_lime_why_acidic, `Kwa nini: pH yako ni ${soilAnalysis.ph} (asidi). Chokaa cha calcitic kitaongeza pH na kuongeza kalsiamu.`, soilAnalysis.ph);
+        whyText = `Kwanini: pH yako ni ${soilAnalysis.ph} (asidi). Chokaa itaongeza pH na kuongeza kalsiamu.`;
       } else if (soilAnalysis && soilAnalysis.calcium && soilAnalysis.calcium < 400) {
-        whyText = safeT(SW.calcitic_lime_why_low_ca, `Kwa nini: Kalsiamu yako ni chini (${soilAnalysis.calcium} ppm). Chokaa cha calcitic huongeza kalsiamu bila kuongeza magnesiamu.`, soilAnalysis.calcium);
+        whyText = `Kwanini: Kalsiamu yako ni chini (${soilAnalysis.calcium} ppm). Chokaa inaongeza kalsiamu bila kuongeza magnesiamu.`;
       }
     } else if (isFrench) {
       if (soilAnalysis && soilAnalysis.ph < 5.5 && soilAnalysis.calcium && soilAnalysis.calcium < 400) {
@@ -370,11 +369,11 @@ export async function generateRecommendations(input: RecommendationInput): Promi
       }
     } else if (isSpanish) {
       if (soilAnalysis && soilAnalysis.ph < 5.5 && soilAnalysis.calcium && soilAnalysis.calcium < 400) {
-        whyText = safeT(ES.calcitic_lime_why_acidic_low_ca, `Por qué: Su pH es ${soilAnalysis.ph} (ácido) y su calcio es bajo (${soilAnalysis.calcium} ppm). ¡La cal calcítica soluciona ambos problemas!`, soilAnalysis.ph, soilAnalysis.calcium);
+        whyText = `Por qué: Tu pH es ${soilAnalysis.ph} (ácido) y tu calcio es bajo (${soilAnalysis.calcium} ppm). ¡La cal calcítica soluciona ambos problemas!`;
       } else if (soilAnalysis && soilAnalysis.ph < 5.5) {
-        whyText = safeT(ES.calcitic_lime_why_acidic, `Por qué: Su pH es ${soilAnalysis.ph} (ácido). La cal calcítica elevará el pH y agregará calcio.`, soilAnalysis.ph);
+        whyText = `Por qué: Tu pH es ${soilAnalysis.ph} (ácido). La cal calcítica elevará el pH y agregará calcio.`;
       } else if (soilAnalysis && soilAnalysis.calcium && soilAnalysis.calcium < 400) {
-        whyText = safeT(ES.calcitic_lime_why_low_ca, `Por qué: Su calcio es bajo (${soilAnalysis.calcium} ppm). La cal calcítica agrega calcio sin agregar magnesio.`, soilAnalysis.calcium);
+        whyText = `Por qué: Tu calcio es bajo (${soilAnalysis.calcium} ppm). La cal calcítica agrega calcio sin agregar magnesio.`;
       }
     } else {
       if (soilAnalysis && soilAnalysis.ph < 5.5 && soilAnalysis.calcium && soilAnalysis.calcium < 400) {
@@ -386,20 +385,20 @@ export async function generateRecommendations(input: RecommendationInput): Promi
       }
     }
 
-    const title = isSwahili ? SW.calcitic_lime_title : isFrench ? FR.calcitic_lime_title : isSpanish ? ES.calcitic_lime_title : 'CALCITIC LIME RECOMMENDATION FROM YOUR SOIL TEST';
-    const need = isSwahili ? safeT(SW.calcitic_lime_need, `Kulingana na uchambuzi wako wa udongo, unahitaji ${limeKg} kg ya chokaa kwa ekari.`, limeKg) : isFrench ? safeT(FR.calcitic_lime_need, `Selon votre analyse de sol, vous avez besoin de ${limeKg} kg de chaux par acre.`, limeKg) : isSpanish ? safeT(ES.calcitic_lime_need, `Según su análisis de suelo, necesita ${limeKg} kg de cal por acre.`, limeKg) : `Based on your soil test, you need ${limeKg} kg of calcitic lime per acre.`;
-    const bags = isSwahili ? safeT(SW.calcitic_lime_bags, `Hii ni magunia ${bagsNeeded} ya 50kg.`, bagsNeeded) : isFrench ? safeT(FR.calcitic_lime_bags, `Cela représente ${bagsNeeded} sacs de 50 kg.`, bagsNeeded) : isSpanish ? safeT(ES.calcitic_lime_bags, `Esto es ${bagsNeeded} sacos de 50 kg.`, bagsNeeded) : `This is ${bagsNeeded} bags of 50kg.`;
-    const cost = isSwahili ? safeT(SW.calcitic_lime_cost, `Gharama: ${formatCurrency(totalCost)} (${formatCurrency(limePricePerBag)} kwa gunia)`, formatCurrency(totalCost), formatCurrency(limePricePerBag)) : isFrench ? safeT(FR.calcitic_lime_cost, `Coût : ${formatCurrency(totalCost)} (${formatCurrency(limePricePerBag)} par sac)`, formatCurrency(totalCost), formatCurrency(limePricePerBag)) : isSpanish ? safeT(ES.calcitic_lime_cost, `Costo: ${formatCurrency(totalCost)} (${formatCurrency(limePricePerBag)} por saco)`, formatCurrency(totalCost), formatCurrency(limePricePerBag)) : `Cost: ${formatCurrency(totalCost)} (${formatCurrency(limePricePerBag)} per bag)`;
-    const application = isSwahili ? safeT(SW.calcitic_lime_application, "Weka wiki 3-4 kabla ya kupanda na uchanganye kwenye sentimita 10-15 za juu za udongo.") : isFrench ? safeT(FR.calcitic_lime_application, "Appliquez 3-4 semaines avant la plantation et incorporez dans les 10-15 cm supérieurs du sol.") : isSpanish ? safeT(ES.calcitic_lime_application, "Aplique 3-4 semanas antes de la siembra e incorpore en los primeros 10-15 cm de suelo.") : 'Apply 3-4 weeks before planting and incorporate into top 10-15cm soil.';
-    const wait = isSwahili ? safeT(SW.calcitic_lime_wait, "Subiri wiki 1-2 kabla ya kutumia mbolea za nitrojeni.") : isFrench ? safeT(FR.calcitic_lime_wait, "Attendez 1-2 semaines avant d'appliquer des engrais azotés.") : isSpanish ? safeT(ES.calcitic_lime_wait, "Espere 1-2 semanas antes de aplicar fertilizantes nitrogenados.") : 'Wait 1-2 weeks before applying nitrogen fertilizers.';
-    const business = isSwahili ? safeT(SW.calcitic_lime_business_case, "FAIDA YA BIASHARA: pH sahihi inaweza kuongeza unyonyaji wa virutubisho kwa 30-50%!") : isFrench ? safeT(FR.calcitic_lime_business_case, "AVANTAGE COMMERCIAL : Un pH correct peut augmenter l'absorption des nutriments de 30 à 50 % !") : isSpanish ? safeT(ES.calcitic_lime_business_case, "CASO DE NEGOCIO: ¡El pH adecuado puede aumentar la absorción de nutrientes en un 30-50%!") : 'BUSINESS CASE: Proper pH can increase nutrient uptake by 30-50%!';
-    const yearly = isSwahili ? safeT(SW.soil_test_yearly_reapply, "CHUNGUZA UDONGO KILA MWAKA kujua wakati wa kurudia.") : isFrench ? safeT(FR.soil_test_yearly_reapply, "ANALYSEZ LE SOL CHAQUE ANNÉE pour savoir quand renouveler l'application.") : isSpanish ? safeT(ES.soil_test_yearly_reapply, "ANALICE EL SUELO ANUALMENTE para saber cuándo reaplicar.") : 'TEST SOIL YEARLY to know when to reapply.';
+    const title = isSwahili ? "MAPENDEKEZO YA CHOKAA KUTOKA KWA UCHAMBUZI WAKO WA UDONGO" : isFrench ? FR.calcitic_lime_title : isSpanish ? "RECOMENDACIÓN DE CAL CALCÍTICA DE TU ANÁLISIS DE SUELO" : 'CALCITIC LIME RECOMMENDATION FROM YOUR SOIL TEST';
+    const need = isSwahili ? `Kulingana na uchambuzi wako wa udongo, unahitaji ${limeKg} kg ya chokaa kwa ekari.` : isFrench ? `D'après votre analyse de sol, vous avez besoin de ${limeKg} kg de chaux calcique par acre.` : isSpanish ? `Según tu análisis de suelo, necesitas ${limeKg} kg de cal por acre.` : `Based on your soil test, you need ${limeKg} kg of calcitic lime per acre.`;
+    const bags = isSwahili ? `Hii ni magunia ${bagsNeeded} ya 50kg.` : isFrench ? `Cela représente ${bagsNeeded} sacs de 50 kg.` : isSpanish ? `Esto es ${bagsNeeded} sacos de 50 kg.` : `This is ${bagsNeeded} bags of 50kg.`;
+    const cost = isSwahili ? `Gharama: ${formatCurrency(totalCost)} (${formatCurrency(limePricePerBag)} kwa gunia)` : isFrench ? `Coût : ${formatCurrency(totalCost)} (${formatCurrency(limePricePerBag)} par sac)` : isSpanish ? `Costo: ${formatCurrency(totalCost)} (${formatCurrency(limePricePerBag)} por saco)` : `Cost: ${formatCurrency(totalCost)} (${formatCurrency(limePricePerBag)} per bag)`;
+    const application = isSwahili ? "Weka wiki 3-4 kabla ya kupanda na uchanganye kwenye sentimita 10-15 za juu za udongo." : isFrench ? "Appliquez 3-4 semaines avant la plantation et incorporez dans les 10-15 premiers cm de sol." : isSpanish ? "Aplique 3-4 semanas antes de la siembra e incorpore en los primeros 10-15 cm de suelo." : 'Apply 3-4 weeks before planting and incorporate into top 10-15cm soil.';
+    const wait = isSwahili ? "Subiri wiki 1-2 kabla ya kutumia mbolea za nitrojeni." : isFrench ? "Attendez 1-2 semaines avant d'appliquer des engrais azotés." : isSpanish ? "Espere 1-2 semanas antes de aplicar fertilizantes nitrogenados." : 'Wait 1-2 weeks before applying nitrogen fertilizers.';
+    const business = isSwahili ? "FAIDA YA BIASHARA: pH sahihi inaweza kuongeza unyonyaji wa virutubisho kwa 30-50%!" : isFrench ? "ARGUMENT COMMERCIAL : Un pH correct peut augmenter l'absorption des nutriments de 30 à 50 % !" : isSpanish ? "CASO DE NEGOCIO: ¡El pH adecuado puede aumentar la absorción de nutrientes en un 30-50%!" : 'BUSINESS CASE: Proper pH can increase nutrient uptake by 30-50%!';
+    const yearly = isSwahili ? "CHUNGUZA UDONGO KILA MWAKA kujua wakati wa kurudia." : isFrench ? "ANALYSEZ LE SOL CHAQUE ANNÉE pour savoir quand réappliquer." : isSpanish ? "ANALICE EL SUELO ANUALMENTE para saber cuándo reaplicar." : 'TEST SOIL YEARLY to know when to reapply.';
 
     const contentLines = [title, need, bags, cost, whyText, application, wait, business, yearly].filter(line => line && line.trim() !== '');
     structuredList.push({ key: 'calcitic_lime_grouped', params: { content: contentLines.join('\n'), kg: limeKg, bags: bagsNeeded, total: formatCurrency(totalCost), perBag: formatCurrency(limePricePerBag), ph: soilAnalysis?.ph, ca: soilAnalysis?.calcium } });
   }
 
-  // ========== GROUP 3: DOLOMITIC LIME ==========
+  // ========== GROUP 3: DOLOMITIC LIME (all languages) ==========
   if (hasSoilTest && soilAnalysis) {
     const autoDolomitic = soilTestInterpreter.getDolomiticLimeRecommendation(soilAnalysis);
     let dolomiticNeeded = autoDolomitic.needed;
@@ -415,23 +414,23 @@ export async function generateRecommendations(input: RecommendationInput): Promi
       let whyText = autoDolomitic.reason;
       let title, need, bagsText, costText, application, wait, business, yearly;
       if (isSwahili) {
-        title = SW.dolomitic_lime_title;
-        need = replacePlaceholders(SW.dolomitic_lime_need, { kg: limeKg });
-        bagsText = replacePlaceholders(SW.dolomitic_lime_bags, { bags: bagsNeeded });
-        costText = replacePlaceholders(SW.dolomitic_lime_cost, { total: formatCurrency(totalCost), perBag: formatCurrency(dolomiticPricePerBag) });
-        application = SW.dolomitic_lime_application;
-        wait = SW.dolomitic_lime_wait;
-        business = SW.dolomitic_lime_business_case;
-        yearly = SW.dolomitic_lime_yearly;
+        title = "PENDEKEZO LA CHOKAA DOLOMITIKU KUTOKA UCHAMBUZI WAKO WA UDONGO";
+        need = `Kulingana na uchambuzi wako wa udongo, unahitaji ${limeKg} kg ya chokaa cha dolomitic kwa ekari.`;
+        bagsText = `Hii ni magunia ${bagsNeeded} ya 50kg.`;
+        costText = `Gharama: ${formatCurrency(totalCost)} (${formatCurrency(dolomiticPricePerBag)} kwa gunia)`;
+        application = "Weka wiki 3-4 kabla ya upandaji na uchanganye kwenye udongo wa juu wa 10-15cm.";
+        wait = "Subiri wiki 1-2 kabla ya kuweka mbolea za nitrojeni.";
+        business = "HALI YA BIASHARA: Magnesiamu sahihi huboresha usanisi wa klorofili na fotosinthesisi!";
+        yearly = "CHUNGUZA UDONGO KILA MWAKA kujua wakati wa kurudia.";
         if (farmerData.recDolomiticLime && farmerData.recDolomiticLime > 0) {
           const caMgRatio = (soilAnalysis?.calcium / soilAnalysis?.magnesium).toFixed(1);
           whyText = `Umetaja kiwango maalum cha ${limeKg} kg/ekari. Magnesiamu yako ni chini (${soilAnalysis?.magnesium} ppm) na uwiano Ca:Mg ni ${caMgRatio}:1. Chokaa cha dolomitic kinarekebisha yote mawili.`;
         }
       } else if (isFrench) {
         title = FR.dolomitic_lime_title;
-        need = replacePlaceholders(FR.dolomitic_lime_need, { kg: limeKg });
-        bagsText = replacePlaceholders(FR.dolomitic_lime_bags, { bags: bagsNeeded });
-        costText = replacePlaceholders(FR.dolomitic_lime_cost, { total: formatCurrency(totalCost), perBag: formatCurrency(dolomiticPricePerBag) });
+        need = `D'après votre analyse de sol, vous avez besoin de ${limeKg} kg de chaux dolomitique par acre.`;
+        bagsText = `Cela représente ${bagsNeeded} sacs de 50 kg.`;
+        costText = `Coût : ${formatCurrency(totalCost)} (${formatCurrency(dolomiticPricePerBag)} par sac)`;
         application = FR.dolomitic_lime_application;
         wait = FR.dolomitic_lime_wait;
         business = FR.dolomitic_lime_business_case;
@@ -441,17 +440,17 @@ export async function generateRecommendations(input: RecommendationInput): Promi
           whyText = `Vous avez spécifié un taux personnalisé de ${limeKg} kg/acre. Votre magnésium est faible (${soilAnalysis?.magnesium} ppm) et le rapport Ca:Mg est de ${caMgRatio}:1. La chaux dolomitique corrige les deux.`;
         }
       } else if (isSpanish) {
-        title = ES.dolomitic_lime_title;
-        need = replacePlaceholders(ES.dolomitic_lime_need, { kg: limeKg });
-        bagsText = replacePlaceholders(ES.dolomitic_lime_bags, { bags: bagsNeeded });
-        costText = replacePlaceholders(ES.dolomitic_lime_cost, { total: formatCurrency(totalCost), perBag: formatCurrency(dolomiticPricePerBag) });
-        application = ES.dolomitic_lime_application;
-        wait = ES.dolomitic_lime_wait;
-        business = ES.dolomitic_lime_business_case;
-        yearly = ES.dolomitic_lime_yearly;
+        title = "RECOMENDACIÓN DE CAL DOLOMÍTICA DE SU ANÁLISIS DE SUELO";
+        need = `Según tu análisis de suelo, necesitas ${limeKg} kg de cal dolomítica por acre.`;
+        bagsText = `Esto es ${bagsNeeded} sacos de 50 kg.`;
+        costText = `Costo: ${formatCurrency(totalCost)} (${formatCurrency(dolomiticPricePerBag)} por saco)`;
+        application = "Aplique 3-4 semanas antes de la siembra e incorpore en los primeros 10-15 cm de suelo.";
+        wait = "Espere 1-2 semanas antes de aplicar fertilizantes nitrogenados.";
+        business = "CASO DE NEGOCIO: ¡El magnesio adecuado mejora la síntesis de clorofila y la fotosíntesis!";
+        yearly = "ANALICE EL SUELO CADA AÑO para saber cuándo reaplicar.";
         if (farmerData.recDolomiticLime && farmerData.recDolomiticLime > 0) {
           const caMgRatio = (soilAnalysis?.calcium / soilAnalysis?.magnesium).toFixed(1);
-          whyText = `Especificó una tasa personalizada de ${limeKg} kg/acre. Su magnesio es bajo (${soilAnalysis?.magnesium} ppm) y la relación Ca:Mg es de ${caMgRatio}:1. La cal dolomítica corrige ambos.`;
+          whyText = `Especificaste una tasa personalizada de ${limeKg} kg/acre. Tu magnesio es bajo (${soilAnalysis?.magnesium} ppm) y la relación Ca:Mg es de ${caMgRatio}:1. La cal dolomítica corrige ambos.`;
         }
       } else {
         title = "DOLOMITIC LIME RECOMMENDATION FROM YOUR SOIL TEST";
@@ -495,37 +494,31 @@ export async function generateRecommendations(input: RecommendationInput): Promi
     structuredList.push({ key: 'fertilizer_header_grouped', params: { content: [title, farmSize, totalInv].join('\n'), crop: crop.toUpperCase(), size: fertilizerPlan.farmSize, amount: formatCurrency(fertilizerPlan.totalCost) } });
   }
 
-  // ========== GROUP 5: PLANTING FERTILIZER ==========
-  console.log("🔍 [ENGINE] Checking planting fertilizer block:", {
-    hasSoilTest,
-    hasFertilizerPlan: !!fertilizerPlan,
-    plantingFertilizer: fertilizerPlan?.plantingFertilizer
-  });
+  // ========== GROUP 5: PLANTING FERTILIZER (full titles for all languages) ==========
   if (hasSoilTest && fertilizerPlan && fertilizerPlan.plantingFertilizer) {
     const pf = fertilizerPlan.plantingFertilizer;
-    console.log("✅ [ENGINE] Planting fertilizer found, kgNeeded:", pf.kgNeeded);
     if (pf && pf.kgNeeded > 0) {
       const bags = Math.floor(pf.kgNeeded / 50);
       const openBag = pf.kgNeeded % 50;
       let title, buyText, costText, providesText, extra;
       if (isSwahili) {
-        title = SW.planting_fertilizer_title;
-        buyText = replacePlaceholders(SW.planting_fertilizer_buy, { kg: pf.kgNeeded, name: pf.name });
-        costText = replacePlaceholders(SW.planting_fertilizer_cost, { cost: formatCurrency(pf.cost) });
-        providesText = replacePlaceholders(SW.planting_fertilizer_provides, { n: pf.n.toFixed(1), p: pf.p.toFixed(1), k: pf.k.toFixed(1) });
-        extra = pf.extraNutrients ? replacePlaceholders(SW.planting_fertilizer_extra, { nutrients: pf.extraNutrients }) : '';
+        title = "MBEGEAZA MBOLEA (Weka wakati wa kupanda)";
+        buyText = `Nunua ${pf.kgNeeded} kg ya ${pf.name}`;
+        costText = `Gharama: ${formatCurrency(pf.cost)}`;
+        providesText = `Hutoa: ${pf.n.toFixed(1)} kg N, ${pf.p.toFixed(1)} kg P, ${pf.k.toFixed(1)} kg K`;
+        extra = pf.extraNutrients ? `Virutubisho vya ziada: ${pf.extraNutrients}` : '';
       } else if (isFrench) {
         title = FR.planting_fertilizer_title;
-        buyText = replacePlaceholders(FR.planting_fertilizer_buy, { kg: pf.kgNeeded, name: pf.name });
-        costText = replacePlaceholders(FR.planting_fertilizer_cost, { cost: formatCurrency(pf.cost) });
-        providesText = replacePlaceholders(FR.planting_fertilizer_provides, { n: pf.n.toFixed(1), p: pf.p.toFixed(1), k: pf.k.toFixed(1) });
-        extra = pf.extraNutrients ? replacePlaceholders(FR.planting_fertilizer_extra, { nutrients: pf.extraNutrients }) : '';
+        buyText = `Achetez ${pf.kgNeeded} kg de ${pf.name}`;
+        costText = `Coût : ${formatCurrency(pf.cost)}`;
+        providesText = `Fournit : ${pf.n.toFixed(1)} kg N, ${pf.p.toFixed(1)} kg P, ${pf.k.toFixed(1)} kg K`;
+        extra = pf.extraNutrients ? `Nutriments supplémentaires : ${pf.extraNutrients}` : '';
       } else if (isSpanish) {
-        title = ES.planting_fertilizer_title;
-        buyText = replacePlaceholders(ES.planting_fertilizer_buy, { kg: pf.kgNeeded, name: pf.name });
-        costText = replacePlaceholders(ES.planting_fertilizer_cost, { cost: formatCurrency(pf.cost) });
-        providesText = replacePlaceholders(ES.planting_fertilizer_provides, { n: pf.n.toFixed(1), p: pf.p.toFixed(1), k: pf.k.toFixed(1) });
-        extra = pf.extraNutrients ? replacePlaceholders(ES.planting_fertilizer_extra, { nutrients: pf.extraNutrients }) : '';
+        title = "FERTILIZANTE DE PLANTACIÓN (Aplicar en la siembra)";
+        buyText = `Compre ${pf.kgNeeded} kg de ${pf.name}`;
+        costText = `Costo: ${formatCurrency(pf.cost)}`;
+        providesText = `Proporciona: ${pf.n.toFixed(1)} kg N, ${pf.p.toFixed(1)} kg P, ${pf.k.toFixed(1)} kg K`;
+        extra = pf.extraNutrients ? `Nutrientes adicionales: ${pf.extraNutrients}` : '';
       } else {
         title = "PLANTING FERTILIZER (Apply at planting)";
         buyText = `Buy ${pf.kgNeeded} kg of ${pf.name}`;
@@ -533,45 +526,37 @@ export async function generateRecommendations(input: RecommendationInput): Promi
         providesText = `Provides: ${pf.n.toFixed(1)} kg N, ${pf.p.toFixed(1)} kg P, ${pf.k.toFixed(1)} kg K`;
         extra = pf.extraNutrients ? `Extra nutrients: ${pf.extraNutrients}` : '';
       }
-      const bagInfo = isFrench ? `C'est ${bags} sac(s) de 50kg + ${openBag}kg ouvert` : (isSwahili ? `Hii ni magunia ${bags} ya 50kg + ${openBag}kg fungua` : `This is ${bags} bag(s) of 50kg + ${openBag}kg open`);
+      const bagInfo = isFrench ? `C'est ${bags} sac(s) de 50kg + ${openBag}kg ouvert` : (isSwahili ? `Hii ni magunia ${bags} ya 50kg + ${openBag}kg fungua` : (isSpanish ? `Esto es ${bags} bolsa(s) de 50kg + ${openBag}kg suelto` : `This is ${bags} bag(s) of 50kg + ${openBag}kg open`));
       const contentLines = [title, buyText, bagInfo, costText, providesText, extra].filter(l => l);
       structuredList.push({ key: 'planting_fertilizer', params: { content: contentLines.join('\n') } });
     }
-  } else {
-    console.log("⚠️ [ENGINE] Planting fertilizer skipped – conditions not met");
   }
 
-  // ========== GROUP 6: TOPDRESSING FERTILIZER ==========
-  console.log("🔍 [ENGINE] Checking topdressing fertilizer block:", {
-    hasSoilTest,
-    hasFertilizerPlan: !!fertilizerPlan,
-    topdressingFertilizers: fertilizerPlan?.topdressingFertilizers
-  });
+  // ========== GROUP 6: TOPDRESSING FERTILIZER (full titles for all languages) ==========
   if (hasSoilTest && fertilizerPlan && fertilizerPlan.topdressingFertilizers && fertilizerPlan.topdressingFertilizers.length) {
-    console.log("✅ [ENGINE] Topdressing fertilizers found, count:", fertilizerPlan.topdressingFertilizers.length);
     for (const tf of fertilizerPlan.topdressingFertilizers) {
       if (tf.kgNeeded > 0) {
         const bags = Math.floor(tf.kgNeeded / 50);
         const openBag = tf.kgNeeded % 50;
         let title, buyText, costText, providesText, extra;
         if (isSwahili) {
-          title = SW.topdressing_fertilizer_title;
-          buyText = replacePlaceholders(SW.topdressing_fertilizer_buy, { kg: tf.kgNeeded, name: tf.name });
-          costText = replacePlaceholders(SW.topdressing_fertilizer_cost, { cost: formatCurrency(tf.cost) });
-          providesText = replacePlaceholders(SW.topdressing_fertilizer_provides, { n: tf.n.toFixed(1), p: tf.p.toFixed(1), k: tf.k.toFixed(1) });
-          extra = tf.extraNutrients ? replacePlaceholders(SW.topdressing_fertilizer_extra, { nutrients: tf.extraNutrients }) : '';
+          title = "MBEGEAZA MBOLEA (Weka wiki 3-4 baada ya kupanda)";
+          buyText = `Nunua ${tf.kgNeeded} kg ya ${tf.name}`;
+          costText = `Gharama: ${formatCurrency(tf.cost)}`;
+          providesText = `Hutoa: ${tf.n.toFixed(1)} kg N, ${tf.p.toFixed(1)} kg P, ${tf.k.toFixed(1)} kg K`;
+          extra = tf.extraNutrients ? `Virutubisho vya ziada: ${tf.extraNutrients}` : '';
         } else if (isFrench) {
           title = FR.topdressing_fertilizer_title;
-          buyText = replacePlaceholders(FR.topdressing_fertilizer_buy, { kg: tf.kgNeeded, name: tf.name });
-          costText = replacePlaceholders(FR.topdressing_fertilizer_cost, { cost: formatCurrency(tf.cost) });
-          providesText = replacePlaceholders(FR.topdressing_fertilizer_provides, { n: tf.n.toFixed(1), p: tf.p.toFixed(1), k: tf.k.toFixed(1) });
-          extra = tf.extraNutrients ? replacePlaceholders(FR.topdressing_fertilizer_extra, { nutrients: tf.extraNutrients }) : '';
+          buyText = `Achetez ${tf.kgNeeded} kg de ${tf.name}`;
+          costText = `Coût : ${formatCurrency(tf.cost)}`;
+          providesText = `Fournit : ${tf.n.toFixed(1)} kg N, ${tf.p.toFixed(1)} kg P, ${tf.k.toFixed(1)} kg K`;
+          extra = tf.extraNutrients ? `Nutriments supplémentaires : ${tf.extraNutrients}` : '';
         } else if (isSpanish) {
-          title = ES.topdressing_fertilizer_title;
-          buyText = replacePlaceholders(ES.topdressing_fertilizer_buy, { kg: tf.kgNeeded, name: tf.name });
-          costText = replacePlaceholders(ES.topdressing_fertilizer_cost, { cost: formatCurrency(tf.cost) });
-          providesText = replacePlaceholders(ES.topdressing_fertilizer_provides, { n: tf.n.toFixed(1), p: tf.p.toFixed(1), k: tf.k.toFixed(1) });
-          extra = tf.extraNutrients ? replacePlaceholders(ES.topdressing_fertilizer_extra, { nutrients: tf.extraNutrients }) : '';
+          title = "FERTILIZANTE DE COBERTURA (Aplicar 3-4 semanas después de la siembra)";
+          buyText = `Compre ${tf.kgNeeded} kg de ${tf.name}`;
+          costText = `Costo: ${formatCurrency(tf.cost)}`;
+          providesText = `Proporciona: ${tf.n.toFixed(1)} kg N, ${tf.p.toFixed(1)} kg P, ${tf.k.toFixed(1)} kg K`;
+          extra = tf.extraNutrients ? `Nutrientes adicionales: ${tf.extraNutrients}` : '';
         } else {
           title = "TOP DRESSING FERTILIZER (Apply 3-4 weeks after planting)";
           buyText = `Buy ${tf.kgNeeded} kg of ${tf.name}`;
@@ -579,13 +564,11 @@ export async function generateRecommendations(input: RecommendationInput): Promi
           providesText = `Provides: ${tf.n.toFixed(1)} kg N, ${tf.p.toFixed(1)} kg P, ${tf.k.toFixed(1)} kg K`;
           extra = tf.extraNutrients ? `Extra nutrients: ${tf.extraNutrients}` : '';
         }
-        const bagInfo = isFrench ? `C'est ${bags} sac(s) de 50kg + ${openBag}kg ouvert` : (isSwahili ? `Hii ni magunia ${bags} ya 50kg + ${openBag}kg fungua` : `This is ${bags} bag(s) of 50kg + ${openBag}kg open`);
+        const bagInfo = isFrench ? `C'est ${bags} sac(s) de 50kg + ${openBag}kg ouvert` : (isSwahili ? `Hii ni magunia ${bags} ya 50kg + ${openBag}kg fungua` : (isSpanish ? `Esto es ${bags} bolsa(s) de 50kg + ${openBag}kg suelto` : `This is ${bags} bag(s) of 50kg + ${openBag}kg open`));
         const contentLines = [title, buyText, bagInfo, costText, providesText, extra].filter(l => l);
         structuredList.push({ key: 'topdressing_fertilizer', params: { content: contentLines.join('\n') } });
       }
     }
-  } else {
-    console.log("⚠️ [ENGINE] Topdressing fertilizers skipped – conditions not met");
   }
 
   // ========== GROUP 7: PLANT POPULATION & PER-PLANT GUIDE ==========
@@ -730,7 +713,7 @@ REMEMBER: Every practice you do well puts more money in your pocket.`;
   // ========== GROUP 12: DISEASE MANAGEMENT ==========
   if (farmerData.commonDiseases) {
     let diseaseLines: string[] = [];
-    const diseaseTitle = replacePlaceholders(isSwahili ? (SW.disease_management_title as string) : isFrench ? (FR.disease_management_title as string) : isSpanish ? (ES.disease_management_title as string) : null, { crop: crop.toUpperCase() }) || (isSwahili ? `USIMAMIZI JUMUISHI WA MAGONJWA KWA BIASHARA YAKO YA ${crop.toUpperCase()}` : isFrench ? `GESTION INTÉGRÉE DES MALADIES POUR VOTRE ENTREPRISE ${crop.toUpperCase()}` : isSpanish ? `MANEJO INTEGRADO DE ENFERMEDADES PARA SU EMPRESA ${crop.toUpperCase()}` : `INTEGRATED DISEASE MANAGEMENT FOR YOUR ${crop.toUpperCase()} ENTERPRISE`);
+    const diseaseTitle = replacePlaceholders(isSwahili ? (SW.disease_management_title as string) : isFrench ? (FR.disease_management_title as string) : isSpanish ? (ES.disease_management_title as string) : null, { crop: crop.toUpperCase() }) || (isSwahili ? `UDHIBITI JUMUISHI WA MAGONJWA KWA BIASHARA YAKO YA ${crop.toUpperCase()}` : isFrench ? `GESTION INTÉGRÉE DES MALADIES POUR VOTRE ENTREPRISE ${crop.toUpperCase()}` : isSpanish ? `MANEJO INTEGRADO DE ENFERMEDADES PARA TU EMPRESA de ${crop.toUpperCase()}` : `INTEGRATED DISEASE MANAGEMENT FOR YOUR ${crop.toUpperCase()} ENTERPRISE`);
     diseaseLines.push(diseaseTitle);
     const diseaseReported = replacePlaceholders(isSwahili ? (SW.disease_reported as string) : isFrench ? (FR.disease_reported as string) : isSpanish ? (ES.disease_reported as string) : null, { diseases: farmerData.commonDiseases }) || (isSwahili ? `Magonjwa uliyoripoti: ${farmerData.commonDiseases}` : isFrench ? `Maladies signalées : ${farmerData.commonDiseases}` : isSpanish ? `Enfermedades reportadas: ${farmerData.commonDiseases}` : `The diseases affecting your ${crop.toUpperCase()} ENTERPRISE: ${farmerData.commonDiseases}`);
     diseaseLines.push(diseaseReported);
@@ -740,7 +723,6 @@ REMEMBER: Every practice you do well puts more money in your pocket.`;
     diseaseLines.push(isSwahili ? (SW.disease_prevention_title || "KUZUIA (Rahisi kuliko kutibu)") : isFrench ? (FR.disease_prevention_title || "PRÉVENTION (Moins cher que guérir)") : isSpanish ? (ES.disease_prevention_title || "PREVENCIÓN (Más barato que curar)") : 'PREVENTION (Cheaper than cure)');
     diseaseLines.push(isSwahili ? (SW.disease_prevention_list || "• Tumia aina zinazostahimili magonjwa\n• Zoea mzunguko wa mazao (miaka 3-4)\n• Hakikisha nafasi sahihi kwa mzunguko wa hewa\n• Epuka kufanya kazi kwenye mashamba yenye unyevu\n• Ondoa na uharibu mimea iliyoathirika mara moja\n• Sababisha zana kati ya mashamba") : isFrench ? (FR.disease_prevention_list || "• Utilisez des variétés résistantes\n• Pratiquez la rotation des cultures (3-4 ans)\n• Assurez un espacement adéquat\n• Évitez de travailler dans des champs humides\n• Retirez et détruisez les plantes infectées\n• Désinfectez les outils") : isSpanish ? (ES.disease_prevention_list || "• Use variedades resistentes\n• Practique la rotación de cultivos (3-4 años)\n• Asegure un espacio de separación adecuado\n• Evite trabajar en campos húmedos\n• Retire y destruya plantas infectadas\n• Desinfecte herramientas") : '• Use disease-resistant varieties where available\n• Practice crop rotation (3-4 years)\n• Ensure proper spacing for air circulation\n• Avoid working in wet fields\n• Remove and destroy infected plants immediately\n• Disinfect tools between fields');
     diseaseLines.push('');
-    diseaseLines.push(isSwahili ? (SW.disease_control_title || "CHAGUO ZA UDHIBITI WA MAGONJWA SHAMBANI MWAKO:") : isFrench ? (FR.disease_control_title || "OPTIONS DE LUTTE CONTRE LES MALADIES DANS VOTRE FERME :") : isSpanish ? (ES.disease_control_title || "OPCIONES DE CONTROL DE ENFERMEDADES EN SU FINCA:") : 'CONTROL OPTIONS FOR DISEASES IN YOUR FARM:');
 
     const cropLookupKey = lowerCrop.replace(/\s+/g, '');
     const cropPestsAndDiseases = cropPestDiseaseMap[cropLookupKey] || cropPestDiseaseMap[lowerCrop] || [];
@@ -749,6 +731,7 @@ REMEMBER: Every practice you do well puts more money in your pocket.`;
     const filteredDiseases = userDiseases.length > 0 ? cropDiseases.filter(disease => userDiseases.some(userDisease => disease.name.toLowerCase().includes(userDisease))) : cropDiseases;
 
     if (filteredDiseases.length > 0) {
+      diseaseLines.push(isSwahili ? "CHAGUO ZA UDHIBITI WA MAGONJWA SHAMBANI MWAKO:" : isFrench ? "OPTIONS DE LUTTE CONTRE LES MALADIES DANS VOTRE FERME :" : isSpanish ? "OPCIONES DE CONTROL DE ENFERMEDADES EN SU FINCA:" : 'CONTROL OPTIONS FOR DISEASES IN YOUR FARM:');
       for (const disease of filteredDiseases) {
         diseaseLines.push('');
         diseaseLines.push(`📌 ${disease.name.toUpperCase()}`);
@@ -884,7 +867,7 @@ REMEMBER: Every practice you do well puts more money in your pocket.`;
   // ========== GROUP 13: PEST MANAGEMENT ==========
   if (farmerData.commonPests) {
     let pestLines: string[] = [];
-    const pestTitle = replacePlaceholders(isSwahili ? (SW.pest_management_title as string) : isFrench ? (FR.pest_management_title as string) : isSpanish ? (ES.pest_management_title as string) : null, { crop: crop.toUpperCase() }) || (isSwahili ? `USIMAMIZI JUMUISHI WA WADUDU (IPM) KWA BIASHARA YAKO YA ${crop.toUpperCase()}` : isFrench ? `GESTION INTÉGRÉE DES RAVAGEURS (IPM) POUR VOTRE ENTREPRISE ${crop.toUpperCase()}` : isSpanish ? `MANEJO INTEGRADO DE PLAGAS (MIP) PARA SU EMPRESA ${crop.toUpperCase()}` : `INTEGRATED PEST MANAGEMENT (IPM) FOR YOUR ${crop.toUpperCase()} ENTERPRISE`);
+    const pestTitle = replacePlaceholders(isSwahili ? (SW.pest_management_title as string) : isFrench ? (FR.pest_management_title as string) : isSpanish ? (ES.pest_management_title as string) : null, { crop: crop.toUpperCase() }) || (isSwahili ? `UDHIBITI JUMUISHI WA WADUDU (IPM) KWA BIASHARA YAKO YA ${crop.toUpperCase()}` : isFrench ? `GESTION INTÉGRÉE DES RAVAGEURS (IPM) POUR VOTRE ENTREPRISE ${crop.toUpperCase()}` : isSpanish ? `MANEJO INTEGRADO DE PLAGAS (MIP) PARA TU EMPRESA de ${crop.toUpperCase()}` : `INTEGRATED PEST MANAGEMENT (IPM) FOR YOUR ${crop.toUpperCase()} ENTERPRISE`);
     pestLines.push(pestTitle);
     const pestReported = replacePlaceholders(isSwahili ? (SW.pest_reported as string) : isFrench ? (FR.pest_reported as string) : isSpanish ? (ES.pest_reported as string) : null, { pests: farmerData.commonPests }) || (isSwahili ? `Wadudu ulioripoti: ${farmerData.commonPests}` : isFrench ? `Ravageurs signalés : ${farmerData.commonPests}` : isSpanish ? `Plagas reportadas: ${farmerData.commonPests}` : `The pests affecting your ${crop.toUpperCase()} ENTERPRISE: ${farmerData.commonPests}`);
     pestLines.push(pestReported);
@@ -1212,10 +1195,9 @@ REMEMBER: Every practice you do well puts more money in your pocket.`;
   }
   structuredList.push({ key: 'farming_business', params: { content: businessText } });
 
-  // ========== GROUP 19: DETAILED NUTRITION & HEALTH BENEFITS ==========
+  // ========== GROUP 19: NUTRITION & HEALTH BENEFITS ==========
   if (farmerData.wantsNutritionBenefits) {
     let nutritionText = '';
-    // Coffee (detailed)
     if (lowerCrop === 'coffee') {
       if (isFrench) {
         nutritionText = `🌿 NUTRITION ET BIENFAITS POUR LA SANTÉ – CAFÉ\nPour 100g de produit frais\nNutriments Clés\n• Caféine: 95 mg\n• Riboflavine: 0.2 mg (11% VQ)\n• Magnésium: 7 mg (2% VQ)\n• Potassium: 116 mg (2% VQ)\n• Antioxydants: élevés\n• Niacine: 0.5 mg (3% VQ)\n• Manganèse: 0.1 mg (3% VQ)\n• Acide chlorogénique: variable\nBienfaits pour la Santé\nVigilance – la caféine bloque l'adénosine\nAntioxydant – réduit le stress oxydatif\nSanté du cerveau – peut réduire le risque d'Alzheimer\nSanté du foie – réduit le risque de cirrhose\nMétabolisme – peut accélérer le métabolisme\nSanté cardiaque – protection à consommation modérée\nDiabète de type 2 – peut réduire le risque\nDépression – peut réduire le risque`;
@@ -1227,7 +1209,6 @@ REMEMBER: Every practice you do well puts more money in your pocket.`;
         nutritionText = `🌿 NUTRITION & HEALTH BENEFITS – COFFEE\nPer 100g fresh weight\nKey Nutrients\n• Caffeine: 95 mg\n• Riboflavin: 0.2 mg (11% DV)\n• Magnesium: 7 mg (2% DV)\n• Potassium: 116 mg (2% DV)\n• Antioxidants: high\n• Niacin: 0.5 mg (3% DV)\n• Manganese: 0.1 mg (3% DV)\n• Chlorogenic acid: varies\nHealth Benefits\nAlertness – caffeine blocks adenosine\nAntioxidant – reduces oxidative stress\nBrain health – may lower risk of Alzheimer's\nLiver health – reduces risk of cirrhosis\nMetabolism – may boost metabolic rate\nHeart health – moderate consumption protective\nType 2 diabetes – may reduce risk\nDepression – may lower risk`;
       }
     } else if (lowerCrop === 'bananas') {
-      // Add detailed banana nutrition if needed, otherwise fallback
       if (isFrench) {
         nutritionText = `🌿 NUTRITION ET BIENFAITS POUR LA SANTÉ – BANANAS\nPour 100g de produit frais\nNutriments Clés\n• Vitamine B6: 0.4 mg (24% VQ)\n• Vitamine C: 8.7 mg (10% VQ)\n• Potassium: 358 mg (8% VQ)\n• Manganèse: 0.3 mg (13% VQ)\n• Fibres: 2.6 g (9% VQ)\n• Magnésium: 27 mg (6% VQ)\n• Cuivre: 0.1 mg (8% VQ)\nBienfaits pour la Santé\nAime votre cœur – le potassium abaisse la tension\nDigestion facile – pectine\nÉnergie naturelle – glucides\nAntioxydant – dopamine et catéchines`;
       } else if (isSwahili) {
@@ -1238,7 +1219,6 @@ REMEMBER: Every practice you do well puts more money in your pocket.`;
         nutritionText = `🌿 NUTRITION & HEALTH BENEFITS – BANANAS\nPer 100g fresh weight\nKey Nutrients\n• Vitamin B6: 0.4 mg (24% DV)\n• Vitamin C: 8.7 mg (10% DV)\n• Potassium: 358 mg (8% DV)\n• Manganese: 0.3 mg (13% DV)\n• Fiber: 2.6 g (9% DV)\n• Magnesium: 27 mg (6% DV)\n• Copper: 0.1 mg (8% DV)\nHealth Benefits\nHeart health – potassium lowers blood pressure\nDigestion – pectin\nNatural energy – carbohydrates\nAntioxidant – dopamine and catechins`;
       }
     } else {
-      // Generic fallback for other crops
       if (isFrench) {
         nutritionText = `🌿 BIENFAITS NUTRITIONNELS – ${crop.toUpperCase()}\nRiche en vitamines, minéraux et antioxydants. Une alimentation saine commence par votre ferme.`;
       } else if (isSwahili) {
@@ -1253,7 +1233,7 @@ REMEMBER: Every practice you do well puts more money in your pocket.`;
   }
 
   const list = structuredList.map(item => item.params?.content || '').filter(c => c);
-  const financialAdvice = isFrench ? "Voyez l'analyse financière ci-dessus pour maximiser votre profit." : (isSwahili ? "Tazama uchambuzi wa kifedha hapo juu ili kuongeza faida yako." : (isSpanish ? "Vea el análisis financiero arriba para maximizar su ganancia." : "See financial analysis above to maximize your profit."));
+  const financialAdvice = isSwahili ? "Tazama uchambuzi wa kifedha hapo juu ili kuongeza faida yako." : (isFrench ? "Voyez l'analyse financière ci-dessus pour maximiser votre profit." : (isSpanish ? "Vea el análisis financiero arriba para maximizar su ganancia." : "See financial analysis above to maximize your profit."));
   const structuredFinancialAdvice = { key: 'financial_advice', params: { content: financialAdvice } };
 
   return { list, financialAdvice, structuredList, structuredFinancialAdvice };

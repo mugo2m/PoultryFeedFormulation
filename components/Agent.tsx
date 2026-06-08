@@ -1,4 +1,4 @@
-// components/Agent.tsx - Full file with empty-slot skip
+// components/Agent.tsx - Karaoke streaming with character-based progressive reveal and line breaks
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -131,9 +131,10 @@ const Agent = ({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const [readRecommendations, setReadRecommendations] = useState<Set<number>>(new Set());
+  // Store spoken character index (as string) for each recommendation
   const [recommendationStreams, setRecommendationStreams] = useState<{[key: number]: string}>({});
   const [activeStreamingRec, setActiveStreamingRec] = useState<number | null>(null);
-  const recWordsRef = useRef<{[key: number]: string[]}>({});
+  const recCharIndexRef = useRef<{[key: number]: number}>({});
   const isAISpeakingRef = useRef(false);
   const nameUsageCountRef = useRef(0);
   const voiceServiceRef = useRef<VoiceService | null>(null);
@@ -430,6 +431,7 @@ const Agent = ({
     return speechText;
   };
 
+  // ========== KARAOKE STREAMING: character-based progressive reveal ==========
   const streamRecommendationKaraoke = async (rawRecommendation: string, index: number) => {
     if (!voiceEnabled || !window.speechSynthesis) return;
 
@@ -443,25 +445,36 @@ const Agent = ({
         await new Promise(resolve => setTimeout(resolve, 200));
       }
 
+      // Prepare the text for speech (currency name replacements, farmer name, etc.)
       const speechText = prepareForSpeech(rawRecommendation);
-      const allWords = speechText.split(' ');
-      recWordsRef.current[index] = allWords;
+      // Store the original raw recommendation (with line breaks) for display slicing
+      // We'll use the rawRecommendation (original content) to preserve line breaks.
+      // We need to map spoken characters from the cleaned speechText back to the original rawRecommendation.
+      // To keep it simpler, we'll store both texts and align by character index.
+      // But since cleanup only removes emojis and punctuation, we can use rawRecommendation for display
+      // and approximate the spoken index. More accurate: use rawRecommendation for both display and speech preparation.
+      // However, prepareForSpeech modifies currency names and farmer name, which changes length.
+      // To avoid alignment issues, we will track index based on the rawRecommendation and assume the length difference is negligible for user experience.
 
+      // For a perfect karaoke, we could store both and align. For simplicity, we use rawRecommendation for display
+      // and speechText for utterance. The onboundary event gives charIndex within the speechText.
+      // We'll calculate a ratio and apply to rawRecommendation.
       setActiveStreamingRec(index);
-      setRecommendationStreams(prev => ({ ...prev, [index]: "" }));
+      setRecommendationStreams(prev => ({ ...prev, [index]: "0" }));
 
       const maxChunkWords = 250;
+      const allWords = speechText.split(' ');
       const chunks = [];
       for (let i = 0; i < allWords.length; i += maxChunkWords) {
         chunks.push(allWords.slice(i, i + maxChunkWords).join(' '));
       }
 
-      let cumulativeText = '';
+      let totalCharsSpokenInSpeech = 0;
+      const rawLength = rawRecommendation.length;
+      const speechLength = speechText.length;
 
       for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
         const chunk = chunks[chunkIdx];
-        const chunkWords = chunk.split(' ');
-
         const utterance = new SpeechSynthesisUtterance(chunk);
         utterance.rate = 0.9;
         utterance.pitch = 1.1;
@@ -471,18 +484,23 @@ const Agent = ({
         if (voice) utterance.voice = voice;
         utterance.lang = language;
 
-        let localWordIndex = 0;
-
+        let chunkStartChar = totalCharsSpokenInSpeech;
         utterance.onboundary = (event) => {
-          if (event.name === 'word' && localWordIndex < chunkWords.length) {
-            cumulativeText += (cumulativeText === '' ? '' : ' ') + chunkWords[localWordIndex];
-            setRecommendationStreams(prev => ({ ...prev, [index]: cumulativeText }));
-            localWordIndex++;
+          if (event.name === 'word' && event.charIndex !== undefined) {
+            const absoluteSpeechCharIndex = chunkStartChar + event.charIndex;
+            // Map to raw recommendation index proportionally
+            const rawCharIndex = Math.min(rawLength, Math.floor((absoluteSpeechCharIndex / speechLength) * rawLength));
+            setRecommendationStreams(prev => ({ ...prev, [index]: rawCharIndex.toString() }));
           }
         };
 
         await new Promise<void>((resolve) => {
-          utterance.onend = () => resolve();
+          utterance.onend = () => {
+            totalCharsSpokenInSpeech += chunk.length;
+            const rawCharIndex = Math.min(rawLength, Math.floor((totalCharsSpokenInSpeech / speechLength) * rawLength));
+            setRecommendationStreams(prev => ({ ...prev, [index]: rawCharIndex.toString() }));
+            resolve();
+          };
           utterance.onerror = () => resolve();
           window.speechSynthesis.speak(utterance);
         });
@@ -490,14 +508,15 @@ const Agent = ({
         await new Promise(resolve => setTimeout(resolve, 150));
       }
 
-      setRecommendationStreams(prev => ({ ...prev, [index]: speechText }));
+      // Mark as fully read
+      setRecommendationStreams(prev => ({ ...prev, [index]: rawLength.toString() }));
       setReadRecommendations(prev => new Set(prev).add(index));
       setActiveStreamingRec(null);
       currentUtteranceRef.current = null;
 
     } catch (error) {
       console.error('Error in streamRecommendationKaraoke:', error);
-      setRecommendationStreams(prev => ({ ...prev, [index]: rawRecommendation }));
+      setRecommendationStreams(prev => ({ ...prev, [index]: rawRecommendation.length.toString() }));
       setReadRecommendations(prev => new Set(prev).add(index));
       setActiveStreamingRec(null);
     }
@@ -709,7 +728,7 @@ const Agent = ({
     return safeT('start_voice_session');
   };
 
-  // Render recommendation text – skip if content is empty
+  // ========== RENDER RECOMMENDATION TEXT – progressive reveal ==========
   const renderRecommendationText = (item: StructuredItem, idx: number) => {
     let displayContent = '';
 
@@ -746,31 +765,43 @@ const Agent = ({
       displayContent = safeT(item.key, item.params);
     }
 
-    // Skip if no content
     if (!displayContent || displayContent.trim() === '') {
       return null;
     }
 
-    const streamingText = recommendationStreams[idx];
+    const charIndexStr = recommendationStreams[idx];
+    const spokenCharIndex = charIndexStr ? parseInt(charIndexStr, 10) : 0;
     const isActive = activeStreamingRec === idx;
     const isRead = readRecommendations.has(idx);
 
-    if (!isActive && !isRead) {
-      return null;
+    if (!isActive && !isRead) return null;
+
+    // Progressive reveal: show only the spoken characters (if not finished)
+    let finalText: string;
+    if (isActive && spokenCharIndex > 0 && spokenCharIndex < displayContent.length) {
+      finalText = displayContent.substring(0, spokenCharIndex);
+    } else if (isRead || (isActive && spokenCharIndex >= displayContent.length)) {
+      finalText = displayContent;
+    } else {
+      finalText = '';
     }
 
-    let finalText = isActive ? (streamingText || "") : displayContent;
+    if (!finalText) return null;
+
     const displaySymbol = getDisplaySymbol();
     const originalSymbol = currency.symbol;
+    let processedText = finalText;
     if (displaySymbol !== originalSymbol) {
       const escapedOrig = originalSymbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      finalText = finalText.replace(new RegExp(escapedOrig, 'g'), displaySymbol);
+      processedText = processedText.replace(new RegExp(escapedOrig, 'g'), displaySymbol);
     }
     if (displaySymbol !== 'Ksh') {
-      finalText = finalText.replace(/Ksh/g, displaySymbol);
+      processedText = processedText.replace(/Ksh/g, displaySymbol);
     }
 
-    const lines = finalText.split(/[\n\u240A]/);
+    // Split by newlines for rendering (preserves line breaks)
+    const lines = processedText.split(/\n/);
+    const progressPercent = (spokenCharIndex / displayContent.length) * 100;
 
     return (
       <div
@@ -792,16 +823,16 @@ const Agent = ({
                 </span>
               ))}
             </p>
-            {isActive && recWordsRef.current[idx] && (
+            {isActive && displayContent.length > 0 && (
               <div className="mt-3 flex items-center gap-2">
                 <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-purple-600 transition-all duration-150"
-                    style={{ width: `${((streamingText?.split(' ').length || 0) / recWordsRef.current[idx].length) * 100}%` }}
+                    style={{ width: `${progressPercent}%` }}
                   />
                 </div>
                 <span className="text-sm text-purple-700 font-medium">
-                  {streamingText?.split(' ').length || 0}/{recWordsRef.current[idx].length}
+                  {Math.round(progressPercent)}%
                 </span>
               </div>
             )}

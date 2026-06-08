@@ -1,7 +1,6 @@
-// app/api/vapi/generate/route.ts – FINAL: 19 slots, costs fixed, no NaN
+// app/api/vapi/generate/route.ts – FINAL: costs fixed + sentence line breaks (safe null checks)
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/firebase/admin";
-import { FieldValue } from "firebase-admin/firestore";
 import { soilTestInterpreter } from "@/lib/soilTestInterpreter";
 import { fertilizerCalculator } from "@/lib/fertilizerCalculator";
 import { generateRecommendations } from "@/lib/recommendationEngine";
@@ -161,7 +160,7 @@ function buildDefaultFertilizerPlan(crop: string, farmSize: number, spacingInfo:
   };
 }
 
-// ========== TRANSFORMATION WITH COST CALCULATION ==========
+// ========== TRANSFORMATION WITH COST CALCULATION (FIXES NaN) ==========
 function transformFertilizerPlanForEngine(plan: any): any {
   if (!plan) return null;
   const transformed: any = {
@@ -192,7 +191,7 @@ function transformFertilizerPlanForEngine(plan: any): any {
     };
   }
 
-  // Topdressing fertilizers
+  // Topdressing fertilizers (both CAN and MOP will be processed)
   if (plan.topDressingRecommendations && plan.topDressingRecommendations.length > 0) {
     transformed.topdressingFertilizers = plan.topDressingRecommendations.map((tf: any) => {
       const amountKg = tf.amountKg ?? tf.kgNeeded ?? 0;
@@ -218,9 +217,65 @@ function transformFertilizerPlanForEngine(plan: any): any {
   return transformed;
 }
 
+// ========== VOICE-FRIENDLY LINE BREAKS (sentence boundaries, no decimal breakage, safe null checks) ==========
+function addLineBreaksForVoice(recommendations: any): any {
+  if (!recommendations) return recommendations;
+
+  const processText = (text: string): string => {
+    if (!text) return text;
+    let result = text
+      // Bullet points
+      .replace(/([^•])(• )/g, '$1\n$2')
+      // Warning symbol
+      .replace(/([^⚠️])(⚠️)/g, '$1\n$2')
+      // Numbered lists (e.g., "1. ", "2. ")
+      .replace(/([^0-9])(\d+\. )/g, '$1\n$2')
+      // Sentence endings: period, exclamation, question mark followed by space
+      // Negative lookbehind ensures we don't break decimal numbers (e.g., 1,520.64)
+      .replace(/(?<!\d)([.!?]) /g, '$1\n ');
+    if (result.startsWith('\n')) result = result.substring(1);
+    return result;
+  };
+
+  // Process structuredList safely
+  if (recommendations.structuredList && Array.isArray(recommendations.structuredList)) {
+    recommendations.structuredList = recommendations.structuredList.map((item: any) => {
+      if (!item || !item.params) return item;
+      return {
+        ...item,
+        params: {
+          ...item.params,
+          content: item.params.content ? processText(item.params.content) : item.params.content
+        }
+      };
+    });
+  }
+
+  // Process list safely
+  if (recommendations.list && Array.isArray(recommendations.list)) {
+    recommendations.list = recommendations.list.map((item: any) => {
+      if (!item || !item.params) return item;
+      return {
+        ...item,
+        params: {
+          ...item.params,
+          content: item.params.content ? processText(item.params.content) : item.params.content
+        }
+      };
+    });
+  }
+
+  // Process financialAdvice safely
+  if (recommendations.financialAdvice && typeof recommendations.financialAdvice === 'string') {
+    recommendations.financialAdvice = processText(recommendations.financialAdvice);
+  }
+
+  return recommendations;
+}
+
 export async function POST(request: NextRequest) {
   try {
-    console.log("🚀🚀🚀 USING V4.3 ROUTE (Costs Fixed) 🚀🚀🚀");
+    console.log("🚀🚀🚀 USING V4.3 ROUTE (Costs Fixed + Sentence Pauses) 🚀🚀🚀");
     const body = await request.json();
     const cookieLanguage = request.cookies.get('preferred-language')?.value;
     const bodyLanguage = body.language;
@@ -498,6 +553,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ========== APPLY VOICE-FRIENDLY LINE BREAKS (sentence boundaries) ==========
+    if (recommendationsOutput) {
+      recommendationsOutput = addLineBreaksForVoice(recommendationsOutput);
+    }
+
     const sessionRef = db.collection("farmer_sessions").doc();
     const sessionId = sessionRef.id;
 
@@ -573,7 +633,7 @@ export async function POST(request: NextRequest) {
         warnings: { yield: yieldWarnings, price: priceWarnings, spacing: spacingWarning ? [spacingWarning] : [] },
         createdAt: new Date().toISOString(),
         source: "logic-based",
-        version: "4.3-cost-fixed"
+        version: "4.3-voice-friendly"
       }
     };
 
@@ -602,7 +662,7 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   return NextResponse.json({
     status: "operational",
-    message: "Farmer Session Generation API - FULL 19-SLOT OUTPUT + COSTS FIXED",
+    message: "Farmer Session Generation API - FULL 19-SLOT OUTPUT + COSTS FIXED + SENTENCE PAUSES",
     version: "4.3"
   });
 }
