@@ -1,4 +1,4 @@
-// components/Agent.tsx – Karaoke streaming (works on Android & laptop)
+// components/Agent.tsx – Word-by-word streaming (karaoke)
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -119,8 +119,64 @@ const Agent = ({
   const cropName = sessionData?.crops?.[0] || '';
 
   const getGapKeyFromCrop = (crop: string): string => {
-    // ... (keep your existing mapping function, omitted for brevity)
-    return 'gap_generic';
+    if (!crop) return 'gap_generic';
+    const cropLower = crop.toLowerCase().trim();
+    const cropKeyMap: Record<string, string> = {
+      'banana': 'gap_bananas', 'bananas': 'gap_bananas', 'maize': 'gap_maize', 'beans': 'gap_beans',
+      'finger millet': 'gap_finger_millet', 'sorghum': 'gap_sorghum', 'onions': 'gap_onions',
+      'avocados': 'gap_avocados', 'avocado': 'gap_avocados', 'rice': 'gap_rice', 'mangoes': 'gap_mangoes',
+      'mango': 'gap_mangoes', 'pineapples': 'gap_pineapples', 'watermelons': 'gap_watermelons',
+      'carrots': 'gap_carrots', 'chillies': 'gap_chillies', 'spinach': 'gap_spinach', 'pigeonpeas': 'gap_pigeonpeas',
+      'bambaranuts': 'gap_bambaranuts', 'yams': 'gap_yams', 'taro': 'gap_taro', 'okra': 'gap_okra',
+      'tea': 'gap_tea', 'macadamia': 'gap_macadamia', 'cocoa': 'gap_cocoa', 'soya beans': 'gap_soya_beans',
+      'cowpeas': 'gap_cowpeas', 'green grams': 'gap_green_grams', 'groundnuts': 'gap_groundnuts',
+      'sunflower': 'gap_sunflower', 'simsim': 'gap_simsim', 'coffee': 'gap_coffee', 'cotton': 'gap_cotton',
+      'sugarcane': 'gap_sugarcane', 'tobacco': 'gap_tobacco', 'cassava': 'gap_cassava',
+      'sweet potatoes': 'gap_sweet_potatoes', 'irish potatoes': 'gap_irish_potatoes', 'tomatoes': 'gap_tomatoes',
+      'kales': 'gap_kales', 'cabbages': 'gap_cabbages', 'capsicums': 'gap_capsicums', 'brinjals': 'gap_brinjals',
+      'french beans': 'gap_french_beans', 'garden peas': 'gap_garden_peas', 'oranges': 'gap_oranges',
+      'pawpaws': 'gap_pawpaws', 'passion fruit': 'gap_passion_fruit', 'lemons': 'gap_lemons', 'limes': 'gap_limes',
+      'grapefruit': 'gap_grapefruit', 'guava': 'gap_guava', 'jackfruit': 'gap_jackfruit', 'breadfruit': 'gap_breadfruit',
+      'pomegranate': 'gap_pomegranate', 'star fruit': 'gap_star_fruit', 'coconut': 'gap_coconut', 'cashew': 'gap_cashew',
+      'fig': 'gap_fig', 'date palm': 'gap_date_palm', 'mulberry': 'gap_mulberry', 'lychee': 'gap_lychee',
+      'persimmon': 'gap_persimmon', 'gooseberry': 'gap_gooseberry', 'currant': 'gap_currant', 'elderberry': 'gap_elderberry',
+      'rambutan': 'gap_rambutan', 'durian': 'gap_durian', 'mangosteen': 'gap_mangosteen', 'longan': 'gap_longan',
+      'marula': 'gap_marula', 'vanilla': 'gap_vanilla', 'cardamom': 'gap_cardamom', 'cinnamon': 'gap_cinnamon',
+      'cloves': 'gap_cloves', 'black pepper': 'gap_black_pepper', 'lemon grass': 'gap_lemon_grass',
+      'rosemary': 'gap_rosemary', 'thyme': 'gap_thyme', 'parsley': 'gap_parsley', 'coriander': 'gap_coriander',
+      'cauliflower': 'gap_cauliflower', 'broccoli': 'gap_broccoli', 'leeks': 'gap_leeks', 'celery': 'gap_celery',
+      'lettuce': 'gap_lettuce', 'radish': 'gap_radish', 'beetroot': 'gap_beetroot', 'sisal': 'gap_sisal',
+      'bamboo': 'gap_bamboo', 'napier grass': 'gap_napier_grass', 'rhodes grass': 'gap_rhodes_grass',
+      'lucerne': 'gap_lucerne', 'aloe vera': 'gap_aloe_vera', 'hibiscus': 'gap_hibiscus', 'brachiaria': 'gap_brachiaria',
+      'guinea grass': 'gap_guinea_grass', 'buffel grass': 'gap_buffel_grass', 'napier hybrid': 'gap_napier_hybrid',
+      'oats': 'gap_oats', 'italian ryegrass': 'gap_italian_ryegrass', 'timothy grass': 'gap_timothy_grass',
+      'orchard grass': 'gap_orchard_grass', 'white clover': 'gap_white_clover', 'forage sorghum': 'gap_forage_sorghum',
+      'alfalfa': 'gap_alfalfa', 'almond': 'gap_almond', 'artichoke': 'gap_artichoke', 'arugula': 'gap_arugula',
+      'asparagus': 'gap_asparagus', 'barley': 'gap_barley', 'basil': 'gap_basil', 'birds eye chili': 'gap_birds_eye_chili',
+      'brazil nut': 'gap_brazil_nut', 'buckwheat': 'gap_buckwheat', 'cayenne': 'gap_cayenne', 'chamomile': 'gap_chamomile',
+      'chestnut': 'gap_chestnut', 'chickpea': 'gap_chickpea', 'clover': 'gap_clover', 'dill': 'gap_dill',
+      'echinacea': 'gap_echinacea', 'endive': 'gap_endive', 'escarole': 'gap_escarole', 'faba bean': 'gap_faba_bean',
+      'fennel': 'gap_fennel', 'fenugreek': 'gap_fenugreek', 'flax': 'gap_flax', 'fonio': 'gap_fonio',
+      'frisee': 'gap_frisee', 'ginseng': 'gap_ginseng', 'goldenseal': 'gap_goldenseal', 'hazelnut': 'gap_hazelnut',
+      'hemp': 'gap_hemp', 'hops': 'gap_hops', 'horseradish': 'gap_horseradish', 'jalapeno': 'gap_jalapeno',
+      'jute': 'gap_jute', 'kenaf': 'gap_kenaf', 'kohlrabi': 'gap_kohlrabi', 'lavender': 'gap_lavender',
+      'lentil': 'gap_lentil', 'mint': 'gap_mint', 'mushroom': 'gap_mushroom', 'mustard': 'gap_mustard',
+      'oil palm': 'gap_oil_palm', 'oregano': 'gap_oregano', 'parsnip': 'gap_parsnip', 'peanut': 'gap_peanut',
+      'pecan': 'gap_pecan', 'pistachio': 'gap_pistachio', 'potatoes': 'gap_potatoes', 'pumpkin': 'gap_pumpkin',
+      'quinoa': 'gap_quinoa', 'rapeseed': 'gap_rapeseed', 'rhubarb': 'gap_rhubarb', 'rubber': 'gap_rubber',
+      'rutabaga': 'gap_rutabaga', 'safflower': 'gap_safflower', 'sage': 'gap_sage', 'sesame': 'gap_sesame',
+      'shea': 'gap_shea', 'spelt': 'gap_spelt', 'stinging nettle': 'gap_stinging_nettle', 'swiss chard': 'gap_swiss_chard',
+      'tarragon': 'gap_tarragon', 'teff': 'gap_teff', 'triticale': 'gap_triticale', 'turnip': 'gap_turnip',
+      'turnip greens': 'gap_turnip_greens', 'valerian': 'gap_valerian', 'vetch': 'gap_vetch', 'walnut': 'gap_walnut',
+      'wasabi': 'gap_wasabi', 'watercress': 'gap_watercress', 'wheat': 'gap_wheat', 'shallots': 'gap_shallots',
+      'chives': 'gap_chives', 'garlic': 'gap_garlic', 'african nightshade': 'gap_african_nightshade',
+      'amaranth': 'gap_amaranth', 'spider plant': 'gap_spider_plant', 'pumpkin leaves': 'gap_pumpkin_leaves',
+      'jute mallow': 'gap_jute_mallow', 'ethiopian kale': 'gap_ethiopian_kale', 'slender leaf': 'gap_slender_leaf',
+      'oyster nut': 'gap_oyster_nut', 'mucuna': 'gap_mucuna', 'desmodium': 'gap_desmodium', 'dolichos': 'gap_dolichos',
+      'canavalia': 'gap_canavalia', 'sunn hemp': 'gap_sunn_hemp', 'crotalaria paulina': 'gap_crotalaria_paulina',
+      'moringa': 'gap_moringa', 'ginger': 'gap_ginger', 'turmeric': 'gap_turmeric',
+    };
+    return cropKeyMap[cropLower] || 'gap_generic';
   };
 
   const recognitionLanguage = (() => {
@@ -135,8 +191,80 @@ const Agent = ({
 
   const getBestVoice = () => {
     const voices = window.speechSynthesis.getVoices();
-    // ... (keep your existing voice selection logic)
-    return { voice: voices.find(v => v.lang === 'en-GB') || null, language: 'en-GB' };
+    const findBritishEnglishFemale = (): SpeechSynthesisVoice | null => {
+      const femaleNames = ['libby', 'hazel', 'susan', 'maisie', 'sonia', 'kate', 'victoria', 'millie', 'olivia', 'google uk english female', 'microsoft libby', 'microsoft hazel', 'microsoft susan', 'microsoft maisie', 'microsoft sonia', 'british english female', 'uk english female'];
+      for (const name of femaleNames) {
+        const voice = voices.find(v => v.lang === 'en-GB' && v.name.toLowerCase().includes(name));
+        if (voice) return voice;
+      }
+      const maleIndicators = ['george', 'ryan', 'thomas', 'david', 'mark', 'james', 'john', 'paul', 'michael'];
+      const anyBritishFemale = voices.find(v => v.lang === 'en-GB' && !maleIndicators.some(m => v.name.toLowerCase().includes(m)));
+      if (anyBritishFemale) return anyBritishFemale;
+      return voices.find(v => v.lang === 'en-GB') || null;
+    };
+    const findAmericanEnglishFemale = (): SpeechSynthesisVoice | null => {
+      const femaleNames = ['samantha', 'victoria', 'zira', 'jenny', 'aria', 'google us english female', 'microsoft jenny', 'microsoft zira', 'microsoft aria', 'us english female'];
+      for (const name of femaleNames) {
+        const voice = voices.find(v => v.lang === 'en-US' && v.name.toLowerCase().includes(name));
+        if (voice) return voice;
+      }
+      const maleIndicators = ['david', 'mark', 'james', 'john', 'paul', 'michael', 'alex', 'thomas'];
+      const anyFemale = voices.find(v => v.lang === 'en-US' && !maleIndicators.some(m => v.name.toLowerCase().includes(m)));
+      if (anyFemale) return anyFemale;
+      return voices.find(v => v.lang === 'en-US') || null;
+    };
+    const findFrenchVoice = (): SpeechSynthesisVoice | null => {
+      let vivienne = voices.find(v => v.lang.startsWith('fr') && v.name.toLowerCase().includes('vivienne'));
+      if (vivienne) return vivienne;
+      const frenchFemale = voices.find(v => v.lang.startsWith('fr') && (v.name.toLowerCase().includes('denise') || v.name.toLowerCase().includes('google français female') || v.name.toLowerCase().includes('marie') || v.name.toLowerCase().includes('chloe')));
+      if (frenchFemale) return frenchFemale;
+      return voices.find(v => v.lang.startsWith('fr')) || null;
+    };
+    const findSpanishVoice = (): SpeechSynthesisVoice | null => {
+      const femaleNames = ['elena', 'ximena', 'maria', 'paloma', 'sofia', 'catalina', 'salome', 'belkys', 'ramona', 'andrea', 'lorena', 'teresa', 'marta', 'karla', 'dalia', 'yolanda', 'margarita', 'tania', 'camila', 'karina', 'elvira', 'valentina', 'paola', 'michelle', 'gabriela', 'lucia', 'laura', 'fernanda', 'victoria', 'monica', 'paulina', 'sabina', 'helena', 'florencia'];
+      for (const name of femaleNames) {
+        const voice = voices.find(v => v.lang.startsWith('es') && v.name.toLowerCase().includes(name));
+        if (voice) return voice;
+      }
+      const nonMale = voices.find(v => v.lang.startsWith('es') && !v.name.toLowerCase().includes('alvaro') && !v.name.toLowerCase().includes('jorge') && !v.name.toLowerCase().includes('manuel') && !v.name.toLowerCase().includes('andres') && !v.name.toLowerCase().includes('carlos') && !v.name.toLowerCase().includes('juan') && !v.name.toLowerCase().includes('luis') && !v.name.toLowerCase().includes('rodrigo') && !v.name.toLowerCase().includes('javier'));
+      if (nonMale) return nonMale;
+      return null;
+    };
+    const findSwahiliVoice = (): SpeechSynthesisVoice | null => {
+      let swahiliVoices = voices.filter(v => v.lang === 'sw-KE' && (v.name.includes('Rafiki') || v.name.includes('Zuri') || v.name.includes('Aisha') || v.name.includes('Kenya')));
+      if (swahiliVoices.length > 0) return swahiliVoices[0];
+      swahiliVoices = voices.filter(v => v.lang === 'sw-KE');
+      if (swahiliVoices.length > 0) return swahiliVoices[0];
+      return null;
+    };
+    if (recognitionLanguage === 'en-GB') {
+      const britishVoice = findBritishEnglishFemale();
+      if (britishVoice) return { voice: britishVoice, language: 'en-GB' };
+      const anyNonMale = voices.find(v => v.lang.startsWith('en') && !v.name.toLowerCase().includes('male'));
+      if (anyNonMale) return { voice: anyNonMale, language: 'en-GB' };
+    }
+    if (recognitionLanguage === 'en-US') {
+      const usVoice = findAmericanEnglishFemale();
+      if (usVoice) return { voice: usVoice, language: 'en-US' };
+      const anyNonMale = voices.find(v => v.lang.startsWith('en') && !v.name.toLowerCase().includes('male'));
+      if (anyNonMale) return { voice: anyNonMale, language: 'en-US' };
+    }
+    if (recognitionLanguage === 'fr-FR' || recognitionLanguage === 'fr-CA' || recognitionLanguage.startsWith('fr')) {
+      const frenchVoice = findFrenchVoice();
+      if (frenchVoice) return { voice: frenchVoice, language: 'fr-FR' };
+    }
+    if (recognitionLanguage === 'es-ES' || recognitionLanguage.startsWith('es')) {
+      const spanishVoice = findSpanishVoice();
+      if (spanishVoice) return { voice: spanishVoice, language: 'es-ES' };
+    }
+    if (recognitionLanguage === 'sw-KE' || recognitionLanguage === 'sw-TZ' || recognitionLanguage.startsWith('sw')) {
+      const swahiliVoice = findSwahiliVoice();
+      if (swahiliVoice) return { voice: swahiliVoice, language: 'sw-KE' };
+    }
+    const anyEnglish = voices.find(v => v.lang.startsWith('en') && !v.name.toLowerCase().includes('male'));
+    if (anyEnglish) return { voice: anyEnglish, language: 'en-GB' };
+    if (voices.length > 0) return { voice: voices[0], language: 'en-GB' };
+    return { voice: null, language: 'en-GB' };
   };
 
   const waitForVoices = (maxAttempts = 5): Promise<void> => {
@@ -208,7 +336,7 @@ const Agent = ({
     return speechText;
   };
 
-  // ========== KARAOKE STREAMING with onboundary + fallback ==========
+  // ========== KARAOKE STREAMING (word-by-word using onboundary) ==========
   const streamRecommendationKaraoke = async (rawRecommendation: string, index: number) => {
     if (!voiceEnabled || !window.speechSynthesis) return;
 
@@ -228,15 +356,8 @@ const Agent = ({
     utterance.rate = 0.9;
     utterance.pitch = 1.1;
 
-    let wordCount = 0;
-    const words = rawRecommendation.split(/\s+/);
-    let fallbackTimeout: NodeJS.Timeout;
-    let hasBoundary = false;
-
     utterance.onboundary = (event) => {
       if (event.name === 'word') {
-        hasBoundary = true;
-        // Approximate the word index using charIndex ratio
         const ratio = event.charIndex / speechText.length;
         const rawIndex = Math.min(rawRecommendation.length, Math.floor(ratio * rawRecommendation.length));
         const displayed = rawRecommendation.substring(0, rawIndex);
@@ -245,14 +366,12 @@ const Agent = ({
     };
 
     utterance.onend = () => {
-      clearTimeout(fallbackTimeout);
       setRecommendationStreams(prev => ({ ...prev, [index]: rawRecommendation }));
       setReadRecommendations(prev => new Set(prev).add(index));
       setActiveStreamingRec(null);
     };
 
     utterance.onerror = () => {
-      clearTimeout(fallbackTimeout);
       setRecommendationStreams(prev => ({ ...prev, [index]: rawRecommendation }));
       setReadRecommendations(prev => new Set(prev).add(index));
       setActiveStreamingRec(null);
@@ -260,31 +379,6 @@ const Agent = ({
 
     window.speechSynthesis.speak(utterance);
     currentUtteranceRef.current = utterance;
-
-    // Fallback: if onboundary never fires within 500ms, use word-by-word queue
-    fallbackTimeout = setTimeout(async () => {
-      if (!hasBoundary && window.speechSynthesis.speaking) {
-        window.speechSynthesis.cancel();
-        let displayed = '';
-        for (let i = 0; i < words.length; i++) {
-          displayed += (i === 0 ? words[i] : ' ' + words[i]);
-          setRecommendationStreams(prev => ({ ...prev, [index]: displayed }));
-          const wordUtterance = new SpeechSynthesisUtterance(words[i]);
-          if (voice) wordUtterance.voice = voice;
-          wordUtterance.lang = language;
-          wordUtterance.rate = 0.9;
-          await new Promise<void>((res) => {
-            wordUtterance.onend = () => res();
-            wordUtterance.onerror = () => res();
-            window.speechSynthesis.speak(wordUtterance);
-          });
-          await new Promise(r => setTimeout(r, 50));
-        }
-        setRecommendationStreams(prev => ({ ...prev, [index]: rawRecommendation }));
-        setReadRecommendations(prev => new Set(prev).add(index));
-        setActiveStreamingRec(null);
-      }
-    }, 500);
   };
 
   const speakWithVoice = async (text: string): Promise<void> => {
@@ -395,6 +489,7 @@ const Agent = ({
     return safeT('start_voice_session');
   };
 
+  // ========== RENDER PROGRESSIVE TEXT (word-by-word) ==========
   const renderRecommendationText = (item: StructuredItem, idx: number) => {
     let displayContent = '';
     if (item.params?.content) displayContent = item.params.content;
@@ -433,7 +528,9 @@ const Agent = ({
     const isRead = readRecommendations.has(idx);
     if (!isActive && !isRead) return null;
 
-    let finalText = isRead ? displayContent : displayedText;
+    // During active streaming, show only the progressively revealed text
+    // After finished, show the full content
+    let finalText = isActive ? displayedText : displayContent;
     if (!finalText) return null;
 
     const displaySymbol = getDisplaySymbol();
