@@ -1,4 +1,4 @@
-// components/Agent.tsx – Word-by-word streaming (karaoke)
+// components/Agent.tsx – True karaoke: word-by-word streaming, one slot at a time
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -109,6 +109,7 @@ const Agent = ({
   const mountedRef = useRef(true);
   const voiceServiceInitializedRef = useRef(false);
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const abortFlag = useRef(false);
 
   const soilTest = sessionData?.soilTest;
   const hasSoilTest = soilTest && soilTest.testDate;
@@ -118,6 +119,7 @@ const Agent = ({
   const farmerCountry = sessionData?.country || 'kenya';
   const cropName = sessionData?.crops?.[0] || '';
 
+  // ========== ORIGINAL getGapKeyFromCrop (full) ==========
   const getGapKeyFromCrop = (crop: string): string => {
     if (!crop) return 'gap_generic';
     const cropLower = crop.toLowerCase().trim();
@@ -189,8 +191,11 @@ const Agent = ({
     return 'en-US';
   })();
 
+  // ========== ORIGINAL getBestVoice (full) ==========
   const getBestVoice = () => {
     const voices = window.speechSynthesis.getVoices();
+    console.log(`Looking for voice for language: ${recognitionLanguage}`);
+
     const findBritishEnglishFemale = (): SpeechSynthesisVoice | null => {
       const femaleNames = ['libby', 'hazel', 'susan', 'maisie', 'sonia', 'kate', 'victoria', 'millie', 'olivia', 'google uk english female', 'microsoft libby', 'microsoft hazel', 'microsoft susan', 'microsoft maisie', 'microsoft sonia', 'british english female', 'uk english female'];
       for (const name of femaleNames) {
@@ -202,6 +207,7 @@ const Agent = ({
       if (anyBritishFemale) return anyBritishFemale;
       return voices.find(v => v.lang === 'en-GB') || null;
     };
+
     const findAmericanEnglishFemale = (): SpeechSynthesisVoice | null => {
       const femaleNames = ['samantha', 'victoria', 'zira', 'jenny', 'aria', 'google us english female', 'microsoft jenny', 'microsoft zira', 'microsoft aria', 'us english female'];
       for (const name of femaleNames) {
@@ -213,6 +219,7 @@ const Agent = ({
       if (anyFemale) return anyFemale;
       return voices.find(v => v.lang === 'en-US') || null;
     };
+
     const findFrenchVoice = (): SpeechSynthesisVoice | null => {
       let vivienne = voices.find(v => v.lang.startsWith('fr') && v.name.toLowerCase().includes('vivienne'));
       if (vivienne) return vivienne;
@@ -220,6 +227,7 @@ const Agent = ({
       if (frenchFemale) return frenchFemale;
       return voices.find(v => v.lang.startsWith('fr')) || null;
     };
+
     const findSpanishVoice = (): SpeechSynthesisVoice | null => {
       const femaleNames = ['elena', 'ximena', 'maria', 'paloma', 'sofia', 'catalina', 'salome', 'belkys', 'ramona', 'andrea', 'lorena', 'teresa', 'marta', 'karla', 'dalia', 'yolanda', 'margarita', 'tania', 'camila', 'karina', 'elvira', 'valentina', 'paola', 'michelle', 'gabriela', 'lucia', 'laura', 'fernanda', 'victoria', 'monica', 'paulina', 'sabina', 'helena', 'florencia'];
       for (const name of femaleNames) {
@@ -230,6 +238,7 @@ const Agent = ({
       if (nonMale) return nonMale;
       return null;
     };
+
     const findSwahiliVoice = (): SpeechSynthesisVoice | null => {
       let swahiliVoices = voices.filter(v => v.lang === 'sw-KE' && (v.name.includes('Rafiki') || v.name.includes('Zuri') || v.name.includes('Aisha') || v.name.includes('Kenya')));
       if (swahiliVoices.length > 0) return swahiliVoices[0];
@@ -237,6 +246,7 @@ const Agent = ({
       if (swahiliVoices.length > 0) return swahiliVoices[0];
       return null;
     };
+
     if (recognitionLanguage === 'en-GB') {
       const britishVoice = findBritishEnglishFemale();
       if (britishVoice) return { voice: britishVoice, language: 'en-GB' };
@@ -336,7 +346,7 @@ const Agent = ({
     return speechText;
   };
 
-  // ========== KARAOKE STREAMING (word-by-word using onboundary) ==========
+  // ========== WORD-BY-WORD KARAOKE (works everywhere) ==========
   const streamRecommendationKaraoke = async (rawRecommendation: string, index: number) => {
     if (!voiceEnabled || !window.speechSynthesis) return;
 
@@ -345,40 +355,37 @@ const Agent = ({
       await new Promise(r => setTimeout(r, 200));
     }
 
+    abortFlag.current = false;
     setActiveStreamingRec(index);
     setRecommendationStreams(prev => ({ ...prev, [index]: "" }));
 
-    const speechText = prepareForSpeech(rawRecommendation);
-    const utterance = new SpeechSynthesisUtterance(speechText);
-    const { voice, language } = getBestVoice();
-    if (voice) utterance.voice = voice;
-    utterance.lang = language;
-    utterance.rate = 0.9;
-    utterance.pitch = 1.1;
+    const words = rawRecommendation.split(/\s+/);
+    let displayed = '';
 
-    utterance.onboundary = (event) => {
-      if (event.name === 'word') {
-        const ratio = event.charIndex / speechText.length;
-        const rawIndex = Math.min(rawRecommendation.length, Math.floor(ratio * rawRecommendation.length));
-        const displayed = rawRecommendation.substring(0, rawIndex);
-        setRecommendationStreams(prev => ({ ...prev, [index]: displayed }));
-      }
-    };
+    for (let i = 0; i < words.length; i++) {
+      if (abortFlag.current) break;
+      displayed += (i === 0 ? words[i] : ' ' + words[i]);
+      setRecommendationStreams(prev => ({ ...prev, [index]: displayed }));
 
-    utterance.onend = () => {
-      setRecommendationStreams(prev => ({ ...prev, [index]: rawRecommendation }));
-      setReadRecommendations(prev => new Set(prev).add(index));
-      setActiveStreamingRec(null);
-    };
+      const wordUtterance = new SpeechSynthesisUtterance(words[i]);
+      const { voice, language } = getBestVoice();
+      if (voice) wordUtterance.voice = voice;
+      wordUtterance.lang = language;
+      wordUtterance.rate = 0.9;
+      wordUtterance.pitch = 1.1;
 
-    utterance.onerror = () => {
-      setRecommendationStreams(prev => ({ ...prev, [index]: rawRecommendation }));
-      setReadRecommendations(prev => new Set(prev).add(index));
-      setActiveStreamingRec(null);
-    };
+      await new Promise<void>((resolve) => {
+        wordUtterance.onend = () => resolve();
+        wordUtterance.onerror = () => resolve();
+        window.speechSynthesis.speak(wordUtterance);
+      });
+      await new Promise(r => setTimeout(r, 50));
+    }
 
-    window.speechSynthesis.speak(utterance);
-    currentUtteranceRef.current = utterance;
+    setRecommendationStreams(prev => ({ ...prev, [index]: rawRecommendation }));
+    setReadRecommendations(prev => new Set(prev).add(index));
+    setActiveStreamingRec(null);
+    currentUtteranceRef.current = null;
   };
 
   const speakWithVoice = async (text: string): Promise<void> => {
@@ -489,7 +496,7 @@ const Agent = ({
     return safeT('start_voice_session');
   };
 
-  // ========== RENDER PROGRESSIVE TEXT (word-by-word) ==========
+  // ========== RENDER: only visible if currently streaming or already read ==========
   const renderRecommendationText = (item: StructuredItem, idx: number) => {
     let displayContent = '';
     if (item.params?.content) displayContent = item.params.content;
@@ -523,23 +530,21 @@ const Agent = ({
     }
     if (!displayContent || displayContent.trim() === '') return null;
 
-    const displayedText = recommendationStreams[idx] || '';
     const isActive = activeStreamingRec === idx;
     const isRead = readRecommendations.has(idx);
     if (!isActive && !isRead) return null;
 
-    // During active streaming, show only the progressively revealed text
-    // After finished, show the full content
-    let finalText = isActive ? displayedText : displayContent;
+    const finalText = isActive ? (recommendationStreams[idx] || '') : displayContent;
     if (!finalText) return null;
 
     const displaySymbol = getDisplaySymbol();
     const originalSymbol = currency.symbol;
-    if (displaySymbol !== originalSymbol) finalText = finalText.replace(new RegExp(originalSymbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), displaySymbol);
-    if (displaySymbol !== 'Ksh') finalText = finalText.replace(/Ksh/g, displaySymbol);
+    let processedText = finalText;
+    if (displaySymbol !== originalSymbol) processedText = processedText.replace(new RegExp(originalSymbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), displaySymbol);
+    if (displaySymbol !== 'Ksh') processedText = processedText.replace(/Ksh/g, displaySymbol);
 
-    const lines = finalText.split(/\n/);
-    const progressPercent = (displayedText.length / displayContent.length) * 100;
+    const lines = processedText.split(/\n/);
+    const progressPercent = (recommendationStreams[idx]?.length || 0) / displayContent.length * 100;
 
     return (
       <div key={idx} className={`rounded-xl p-5 transition-all duration-300 border-2 ${isActive ? 'bg-purple-100 border-purple-500 shadow-2xl scale-105' : 'bg-purple-50 border-purple-300'}`}>
@@ -547,7 +552,7 @@ const Agent = ({
           <span className="rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold flex-shrink-0 bg-purple-500 text-white">{idx + 1}</span>
           <div className="flex-1">
             <p className="text-xl text-gray-800 leading-relaxed">{lines.map((line, i) => <span key={i}>{line}{i < lines.length - 1 && <br />}</span>)}</p>
-            {isActive && displayContent.length > 0 && (
+            {isActive && (
               <div className="mt-3 flex items-center gap-2">
                 <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden"><div className="h-full bg-purple-600 transition-all duration-150" style={{ width: `${progressPercent}%` }} /></div>
                 <span className="text-sm text-purple-700 font-medium">{Math.round(progressPercent)}%</span>
