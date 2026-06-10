@@ -1,4 +1,4 @@
-// components/Agent.tsx – Android voice fix: local voices first, time‑based karaoke, no console spam
+// components/Agent.tsx – Android voice fix: only local voices, time‑based karaoke
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -101,7 +101,7 @@ const Agent = ({
 
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [voiceInitializing, setVoiceInitializing] = useState(false);
-  const [hasPaid, setHasPaid] = useState(true);
+  const [hasPaid, setHasPaid] = useState(true); // For demo; adjust as needed
   const [paymentChecked, setPaymentChecked] = useState(true);
   const [paymentUsed, setPaymentUsed] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -201,8 +201,8 @@ const Agent = ({
     return 'en-US';
   })();
 
-  // Get voice candidates: local/offline voices first, then online
-  const getVoiceCandidates = (): SpeechSynthesisVoice[] => {
+  // ========== VOICE CANDIDATES: ONLY LOCAL / OFFLINE VOICES ==========
+  const getLocalVoiceCandidates = (): SpeechSynthesisVoice[] => {
     const voices = window.speechSynthesis.getVoices();
     if (!voices.length) return [];
 
@@ -211,11 +211,16 @@ const Agent = ({
       return !name.includes('online') && !name.includes('natural') && !name.includes('google') && !name.includes('cloud') && !name.includes('remote');
     };
 
-    const exact = voices.filter(v => v.lang === recognitionLanguage);
-    const enGB = voices.filter(v => v.lang === 'en-GB');
-    const enUS = voices.filter(v => v.lang === 'en-US');
-    const anyEn = voices.filter(v => v.lang.startsWith('en'));
-    const any = [...voices];
+    // Filter only local voices
+    const localVoices = voices.filter(isLocal);
+    if (localVoices.length === 0) return [];
+
+    // Prioritise by language: exact match, then en-GB, en-US, any English, then any
+    const exact = localVoices.filter(v => v.lang === recognitionLanguage);
+    const enGB = localVoices.filter(v => v.lang === 'en-GB');
+    const enUS = localVoices.filter(v => v.lang === 'en-US');
+    const anyEn = localVoices.filter(v => v.lang.startsWith('en'));
+    const any = [...localVoices];
 
     const candidates: SpeechSynthesisVoice[] = [];
     const addUnique = (list: SpeechSynthesisVoice[]) => {
@@ -225,17 +230,11 @@ const Agent = ({
         }
       }
     };
-    const addLocalFirst = (list: SpeechSynthesisVoice[]) => {
-      const localList = list.filter(isLocal);
-      const onlineList = list.filter(v => !isLocal(v));
-      addUnique(localList);
-      addUnique(onlineList);
-    };
-    addLocalFirst(exact);
-    addLocalFirst(enGB);
-    addLocalFirst(enUS);
-    addLocalFirst(anyEn);
-    addLocalFirst(any);
+    addUnique(exact);
+    addUnique(enGB);
+    addUnique(enUS);
+    addUnique(anyEn);
+    addUnique(any);
     return candidates;
   };
 
@@ -360,7 +359,7 @@ const Agent = ({
     return speechText;
   };
 
-  // ========== STREAM WITH VOICE FALLBACK AND TIME-BASED TEXT REVEAL ==========
+  // ========== KARAOKE STREAMING WITH LOCAL VOICES ONLY ==========
   const streamRecommendationKaraoke = async (rawRecommendation: string, index: number) => {
     if (!voiceEnabled || !window.speechSynthesis) return;
 
@@ -377,6 +376,7 @@ const Agent = ({
     const fullRawText = rawRecommendation;
     const estimatedDuration = Math.max(1000, speechText.length * 70);
 
+    // Time-based animation (always runs)
     let animationId: number | null = null;
     let startTime = 0;
     const updateProgress = (progress: number) => {
@@ -404,11 +404,24 @@ const Agent = ({
     };
     startAnimation();
 
-    const candidates = getVoiceCandidates();
+    // Voice candidates – only local voices
+    const candidates = getLocalVoiceCandidates();
+    if (candidates.length === 0) {
+      // No local voices – rely on animation only; mark as read when animation ends
+      setTimeout(() => {
+        if (activeStreamingRec === index && !readRecommendations.has(index)) {
+          setRecommendationStreams(prev => ({ ...prev, [index]: fullRawText }));
+          setReadRecommendations(prev => new Set(prev).add(index));
+          setActiveStreamingRec(null);
+        }
+      }, estimatedDuration + 500);
+      return;
+    }
+
     let voiceIdx = 0;
     const trySpeak = () => {
       if (voiceIdx >= candidates.length) {
-        // No working voice – text still reveals via animation
+        // All local voices failed – rely on animation
         setTimeout(() => {
           if (activeStreamingRec === index && !readRecommendations.has(index)) {
             setRecommendationStreams(prev => ({ ...prev, [index]: fullRawText }));
@@ -436,7 +449,7 @@ const Agent = ({
       };
 
       utterance.onerror = (err) => {
-        console.warn(`Voice ${voice.name} (${voice.lang}) failed, trying next`);
+        console.warn(`Local voice ${voice.name} (${voice.lang}) failed, trying next`);
         voiceIdx++;
         trySpeak();
       };
@@ -446,6 +459,7 @@ const Agent = ({
     };
     trySpeak();
 
+    // Safety timeout
     setTimeout(() => {
       if (activeStreamingRec === index && !readRecommendations.has(index)) {
         if (animationId) cancelAnimationFrame(animationId);
@@ -473,7 +487,11 @@ const Agent = ({
 
       setTimeout(() => {
         const speechText = prepareForSpeech(text);
-        const candidates = getVoiceCandidates();
+        const candidates = getLocalVoiceCandidates();
+        if (candidates.length === 0) {
+          resolve();
+          return;
+        }
         let idx = 0;
         const trySpeak = () => {
           if (idx >= candidates.length) {
