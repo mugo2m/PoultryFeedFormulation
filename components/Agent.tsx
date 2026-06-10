@@ -1,4 +1,4 @@
-// components/Agent.tsx - Word-by-word progressive reveal (works on Android)
+// components/Agent.tsx - Smooth continuous speech + progressive text reveal (works on Android)
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -431,7 +431,7 @@ const Agent = ({
     return speechText;
   };
 
-  // ========== WORD-BY-WORD STREAMING (WORKS ON ANDROID) ==========
+  // ========== SMOOTH CONTINUOUS SPEECH + PROGRESSIVE TEXT REVEAL ==========
   const streamRecommendationKaraoke = async (rawRecommendation: string, index: number) => {
     if (!voiceEnabled || !window.speechSynthesis) return;
 
@@ -446,53 +446,127 @@ const Agent = ({
     // Start with empty displayed text
     setRecommendationStreams(prev => ({ ...prev, [index]: "" }));
 
-    // Prepare speech text (currency replaced, farmer name, etc.)
+    // Prepare the text for speaking (currency replaced, farmer name, etc.)
     const speechText = prepareForSpeech(rawRecommendation);
-    // Split into words
-    const words = speechText.split(/\s+/);
-    // For display, use the original rawRecommendation split into words (preserves line breaks and original text)
-    const rawWords = rawRecommendation.split(/\s+/);
-    let displayedText = "";
+    const fullRawText = rawRecommendation;
 
-    for (let i = 0; i < words.length; i++) {
-      if (abortStreamingRef.current) break;
+    // Create the utterance for smooth continuous speech
+    const utterance = new SpeechSynthesisUtterance(speechText);
+    const { voice, language } = getBestVoice();
+    if (voice) utterance.voice = voice;
+    utterance.lang = language;
+    utterance.rate = 0.9;
+    utterance.pitch = 1.1;
+    utterance.volume = 1.0;
 
-      // Build displayed text from rawWords (if we have enough, otherwise from words)
-      if (i < rawWords.length) {
-        displayedText += (i === 0 ? rawWords[i] : " " + rawWords[i]);
-      } else {
-        // Fallback: use word from speech text
-        displayedText += (i === 0 ? words[i] : " " + words[i]);
+    // Variables for progressive reveal
+    let intervalId: NodeJS.Timeout | null = null;
+    let totalDurationMs = 0;
+    let startTime = 0;
+    let animationFrameId: number | null = null;
+    let lastCharIndex = 0;
+    let useTimeBasedFallback = false;
+    let boundaryReceived = false;
+
+    // Estimate total speaking duration based on text length (average 60ms per char works well for English)
+    // Adjust factor: 70ms per character gives smooth reveal
+    const estimatedDuration = Math.max(1000, speechText.length * 70);
+    totalDurationMs = estimatedDuration;
+
+    // Function to update displayed text based on character index (progressive reveal)
+    const updateDisplayByCharIndex = (charIndex: number) => {
+      if (abortStreamingRef.current) return;
+      // Clamp to valid range
+      const clampedIndex = Math.min(fullRawText.length, Math.max(0, Math.floor(charIndex)));
+      const partialText = fullRawText.substring(0, clampedIndex);
+      setRecommendationStreams(prev => ({ ...prev, [index]: partialText }));
+      lastCharIndex = clampedIndex;
+    };
+
+    // Cleanup function
+    const cleanup = () => {
+      if (intervalId) clearInterval(intervalId);
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
+      intervalId = null;
+      animationFrameId = null;
+    };
+
+    // Try to use onboundary for accurate word-level sync (if available)
+    let boundaryTimeout: NodeJS.Timeout | null = null;
+    utterance.onboundary = (event) => {
+      if (!useTimeBasedFallback && event.name === 'word' && event.charIndex !== undefined) {
+        boundaryReceived = true;
+        // Map from speechText character index to rawRecommendation character index by ratio
+        const ratio = event.charIndex / speechText.length;
+        const rawCharIndex = Math.floor(ratio * fullRawText.length);
+        updateDisplayByCharIndex(rawCharIndex);
       }
+    };
 
-      // Update displayed text IMMEDIATELY before speaking the word
-      setRecommendationStreams(prev => ({ ...prev, [index]: displayedText }));
+    // If no boundary event fires within 800ms, fallback to time-based simulation
+    boundaryTimeout = setTimeout(() => {
+      if (!boundaryReceived && !useTimeBasedFallback) {
+        console.log("onboundary not firing, switching to time-based simulation for Android");
+        useTimeBasedFallback = true;
+        cleanup();
 
-      // Speak the current word
-      const word = words[i];
-      const utterance = new SpeechSynthesisUtterance(word);
-      const { voice, language } = getBestVoice();
-      if (voice) utterance.voice = voice;
-      utterance.lang = language;
-      utterance.rate = 0.9;
-      utterance.pitch = 1.1;
-      utterance.volume = 1.0;
+        // Start time-based animation
+        startTime = performance.now();
+        const animate = (now: number) => {
+          if (abortStreamingRef.current) return;
+          const elapsed = now - startTime;
+          let progress = Math.min(1, elapsed / totalDurationMs);
+          const targetCharIndex = Math.floor(progress * fullRawText.length);
+          if (targetCharIndex > lastCharIndex) {
+            updateDisplayByCharIndex(targetCharIndex);
+          }
+          if (progress < 1) {
+            animationFrameId = requestAnimationFrame(animate);
+          } else {
+            // Final update to ensure full text is shown
+            updateDisplayByCharIndex(fullRawText.length);
+            animationFrameId = null;
+          }
+        };
+        animationFrameId = requestAnimationFrame(animate);
+      }
+    }, 800);
 
-      await new Promise<void>((resolve) => {
-        utterance.onend = () => resolve();
-        utterance.onerror = () => resolve();
-        window.speechSynthesis.speak(utterance);
-      });
+    // When speech ends, ensure full text is displayed
+    utterance.onend = () => {
+      if (boundaryTimeout) clearTimeout(boundaryTimeout);
+      cleanup();
+      // Show full text
+      setRecommendationStreams(prev => ({ ...prev, [index]: fullRawText }));
+      setReadRecommendations(prev => new Set(prev).add(index));
+      setActiveStreamingRec(null);
+      currentUtteranceRef.current = null;
+    };
 
-      // Small pause between words for natural rhythm
-      await new Promise(resolve => setTimeout(resolve, 60));
-    }
+    utterance.onerror = (event) => {
+      console.error("Speech error:", event);
+      if (boundaryTimeout) clearTimeout(boundaryTimeout);
+      cleanup();
+      // Show full text on error as fallback
+      setRecommendationStreams(prev => ({ ...prev, [index]: fullRawText }));
+      setReadRecommendations(prev => new Set(prev).add(index));
+      setActiveStreamingRec(null);
+      currentUtteranceRef.current = null;
+    };
 
-    // Mark as fully read
-    setRecommendationStreams(prev => ({ ...prev, [index]: rawRecommendation }));
-    setReadRecommendations(prev => new Set(prev).add(index));
-    setActiveStreamingRec(null);
-    currentUtteranceRef.current = null;
+    // Start speaking
+    window.speechSynthesis.speak(utterance);
+    currentUtteranceRef.current = utterance;
+
+    // If using onboundary and speech ends normally, the onend will handle final display.
+    // But also set a safety timeout to ensure full text appears if onend doesn't fire (rare)
+    setTimeout(() => {
+      if (activeStreamingRec === index && !readRecommendations.has(index)) {
+        setRecommendationStreams(prev => ({ ...prev, [index]: fullRawText }));
+        setReadRecommendations(prev => new Set(prev).add(index));
+        setActiveStreamingRec(null);
+      }
+    }, totalDurationMs + 1000);
   };
 
   const speakWithVoice = async (text: string): Promise<void> => {
