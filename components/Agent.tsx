@@ -1,4 +1,4 @@
-// components/Agent.tsx - Smooth continuous speech + progressive text reveal (karaoke)
+// components/Agent.tsx - Smooth continuous speech + progressive text reveal (works on Android, no voice errors)
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -25,8 +25,6 @@ import {
   VolumeX,
 } from "lucide-react";
 import { useCurrency } from '@/lib/context/CurrencyContext';
-import { formatCurrencyForDisplay } from '@/lib/utils/currency';
-import { getLanguageFromCountry } from '@/lib/config/language';
 
 const LINE_BREAK = '␊';
 
@@ -48,7 +46,7 @@ const Agent = ({
   interviewId,
   sessionData
 }: AgentProps) => {
-  const { t, ready, isOnline, i18n } = useOfflineTranslation();
+  const { t, ready, i18n } = useOfflineTranslation();
   const { currency } = useCurrency();
   const [currentLang, setCurrentLang] = useState<string>('en');
 
@@ -133,7 +131,6 @@ const Agent = ({
   const [readRecommendations, setReadRecommendations] = useState<Set<number>>(new Set());
   const [recommendationStreams, setRecommendationStreams] = useState<{[key: number]: string}>({});
   const [activeStreamingRec, setActiveStreamingRec] = useState<number | null>(null);
-  const isAISpeakingRef = useRef(false);
   const nameUsageCountRef = useRef(0);
   const voiceServiceRef = useRef<VoiceService | null>(null);
   const mountedRef = useRef(true);
@@ -221,92 +218,35 @@ const Agent = ({
 
   console.log(`🎤 Voice language set to: ${recognitionLanguage} (UI language: ${i18n.language})`);
 
+  // RELIABLE VOICE SELECTION – AVOID ONLINE-ONLY VOICES THAT CAUSE ERRORS ON ANDROID
   const getBestVoice = () => {
     const voices = window.speechSynthesis.getVoices();
-    console.log(`Looking for voice for language: ${recognitionLanguage}`);
+    console.log(`Looking for voice for language: ${recognitionLanguage}, total voices: ${voices.length}`);
 
-    const findBritishEnglishFemale = (): SpeechSynthesisVoice | null => {
-      const femaleNames = ['libby', 'hazel', 'susan', 'maisie', 'sonia', 'kate', 'victoria', 'millie', 'olivia', 'google uk english female', 'microsoft libby', 'microsoft hazel', 'microsoft susan', 'microsoft maisie', 'microsoft sonia', 'british english female', 'uk english female'];
-      for (const name of femaleNames) {
-        const voice = voices.find(v => v.lang === 'en-GB' && v.name.toLowerCase().includes(name));
-        if (voice) return voice;
-      }
-      const maleIndicators = ['george', 'ryan', 'thomas', 'david', 'mark', 'james', 'john', 'paul', 'michael'];
-      const anyBritishFemale = voices.find(v => v.lang === 'en-GB' && !maleIndicators.some(m => v.name.toLowerCase().includes(m)));
-      if (anyBritishFemale) return anyBritishFemale;
-      return voices.find(v => v.lang === 'en-GB') || null;
+    // Filter out voices that are likely to fail on Android (online/natural only)
+    const isLocalVoice = (voice: SpeechSynthesisVoice) => {
+      const name = voice.name.toLowerCase();
+      return !name.includes('online') && !name.includes('natural') && !name.includes('google');
     };
 
-    const findAmericanEnglishFemale = (): SpeechSynthesisVoice | null => {
-      const femaleNames = ['samantha', 'victoria', 'zira', 'jenny', 'aria', 'google us english female', 'microsoft jenny', 'microsoft zira', 'microsoft aria', 'us english female'];
-      for (const name of femaleNames) {
-        const voice = voices.find(v => v.lang === 'en-US' && v.name.toLowerCase().includes(name));
-        if (voice) return voice;
-      }
-      const maleIndicators = ['david', 'mark', 'james', 'john', 'paul', 'michael', 'alex', 'thomas'];
-      const anyFemale = voices.find(v => v.lang === 'en-US' && !maleIndicators.some(m => v.name.toLowerCase().includes(m)));
-      if (anyFemale) return anyFemale;
-      return voices.find(v => v.lang === 'en-US') || null;
-    };
+    // First try to find a local voice matching the exact language
+    let selected = voices.find(v => v.lang === recognitionLanguage && isLocalVoice(v));
+    if (!selected) selected = voices.find(v => v.lang === recognitionLanguage);
+    if (!selected && recognitionLanguage.startsWith('en')) {
+      selected = voices.find(v => v.lang.startsWith('en') && isLocalVoice(v));
+    }
+    if (!selected) selected = voices.find(v => v.lang.startsWith('en'));
+    if (!selected && voices.length > 0) selected = voices[0];
 
-    const findFrenchVoice = (): SpeechSynthesisVoice | null => {
-      let vivienne = voices.find(v => v.lang.startsWith('fr') && v.name.toLowerCase().includes('vivienne'));
-      if (vivienne) return vivienne;
-      const frenchFemale = voices.find(v => v.lang.startsWith('fr') && (v.name.toLowerCase().includes('denise') || v.name.toLowerCase().includes('google français female') || v.name.toLowerCase().includes('marie') || v.name.toLowerCase().includes('chloe')));
-      if (frenchFemale) return frenchFemale;
-      return voices.find(v => v.lang.startsWith('fr')) || null;
-    };
-
-    const findSpanishVoice = (): SpeechSynthesisVoice | null => {
-      const femaleNames = ['elena', 'ximena', 'maria', 'paloma', 'sofia', 'catalina', 'salome', 'belkys', 'ramona', 'andrea', 'lorena', 'teresa', 'marta', 'karla', 'dalia', 'yolanda', 'margarita', 'tania', 'camila', 'karina', 'elvira', 'valentina', 'paola', 'michelle', 'gabriela', 'lucia', 'laura', 'fernanda', 'victoria', 'monica', 'paulina', 'sabina', 'helena', 'florencia'];
-      for (const name of femaleNames) {
-        const voice = voices.find(v => v.lang.startsWith('es') && v.name.toLowerCase().includes(name));
-        if (voice) return voice;
-      }
-      const nonMale = voices.find(v => v.lang.startsWith('es') && !v.name.toLowerCase().includes('alvaro') && !v.name.toLowerCase().includes('jorge') && !v.name.toLowerCase().includes('manuel') && !v.name.toLowerCase().includes('andres') && !v.name.toLowerCase().includes('carlos') && !v.name.toLowerCase().includes('juan') && !v.name.toLowerCase().includes('luis') && !v.name.toLowerCase().includes('rodrigo') && !v.name.toLowerCase().includes('javier'));
-      if (nonMale) return nonMale;
-      return null;
-    };
-
-    const findSwahiliVoice = (): SpeechSynthesisVoice | null => {
-      let swahiliVoices = voices.filter(v => v.lang === 'sw-KE' && (v.name.includes('Rafiki') || v.name.includes('Zuri') || v.name.includes('Aisha') || v.name.includes('Kenya')));
-      if (swahiliVoices.length > 0) return swahiliVoices[0];
-      swahiliVoices = voices.filter(v => v.lang === 'sw-KE');
-      if (swahiliVoices.length > 0) return swahiliVoices[0];
-      return null;
-    };
-
-    if (recognitionLanguage === 'en-GB') {
-      const britishVoice = findBritishEnglishFemale();
-      if (britishVoice) return { voice: britishVoice, language: 'en-GB' };
-      const anyNonMale = voices.find(v => v.lang.startsWith('en') && !v.name.toLowerCase().includes('male'));
-      if (anyNonMale) return { voice: anyNonMale, language: 'en-GB' };
+    if (selected) {
+      console.log(`✅ Selected voice: ${selected.name} (${selected.lang})`);
+    } else {
+      console.warn(`⚠️ No voice found, will use default`);
     }
-    if (recognitionLanguage === 'en-US') {
-      const usVoice = findAmericanEnglishFemale();
-      if (usVoice) return { voice: usVoice, language: 'en-US' };
-      const anyNonMale = voices.find(v => v.lang.startsWith('en') && !v.name.toLowerCase().includes('male'));
-      if (anyNonMale) return { voice: anyNonMale, language: 'en-US' };
-    }
-    if (recognitionLanguage === 'fr-FR' || recognitionLanguage === 'fr-CA' || recognitionLanguage.startsWith('fr')) {
-      const frenchVoice = findFrenchVoice();
-      if (frenchVoice) return { voice: frenchVoice, language: 'fr-FR' };
-    }
-    if (recognitionLanguage === 'es-ES' || recognitionLanguage.startsWith('es')) {
-      const spanishVoice = findSpanishVoice();
-      if (spanishVoice) return { voice: spanishVoice, language: 'es-ES' };
-    }
-    if (recognitionLanguage === 'sw-KE' || recognitionLanguage === 'sw-TZ' || recognitionLanguage.startsWith('sw')) {
-      const swahiliVoice = findSwahiliVoice();
-      if (swahiliVoice) return { voice: swahiliVoice, language: 'sw-KE' };
-    }
-    const anyEnglish = voices.find(v => v.lang.startsWith('en') && !v.name.toLowerCase().includes('male'));
-    if (anyEnglish) return { voice: anyEnglish, language: 'en-GB' };
-    if (voices.length > 0) return { voice: voices[0], language: 'en-GB' };
-    return { voice: null, language: 'en-GB' };
+    return { voice: selected || null, language: recognitionLanguage };
   };
 
-  const waitForVoices = (maxAttempts = 5): Promise<void> => {
+  const waitForVoices = (maxAttempts = 10): Promise<void> => {
     return new Promise((resolve) => {
       const check = (attempt = 0) => {
         const voices = window.speechSynthesis.getVoices();
@@ -314,7 +254,7 @@ const Agent = ({
           setVoicesLoaded(true);
           resolve();
         } else if (attempt < maxAttempts) {
-          setTimeout(() => check(attempt + 1), 500);
+          setTimeout(() => check(attempt + 1), 300);
         } else {
           setVoicesLoaded(false);
           resolve();
@@ -430,7 +370,7 @@ const Agent = ({
     return speechText;
   };
 
-  // ========== SMOOTH CONTINUOUS SPEECH + TIME-BASED KARAOKE ==========
+  // ========== SMOOTH CONTINUOUS SPEECH + TIME-BASED PROGRESSIVE REVEAL ==========
   const streamRecommendationKaraoke = async (rawRecommendation: string, index: number) => {
     if (!voiceEnabled || !window.speechSynthesis) return;
 
@@ -507,9 +447,32 @@ const Agent = ({
     utterance.onerror = (event) => {
       console.error("Speech error:", event);
       if (animationId) cancelAnimationFrame(animationId);
-      setRecommendationStreams(prev => ({ ...prev, [index]: fullRawText }));
-      setReadRecommendations(prev => new Set(prev).add(index));
-      setActiveStreamingRec(null);
+      // Even if speech fails, still reveal text progressively over the estimated time
+      // This ensures the user sees the content even without audio
+      const fallbackInterval = setInterval(() => {
+        if (abortStreamingRef.current) {
+          clearInterval(fallbackInterval);
+          return;
+        }
+        setRecommendationStreams(prev => {
+          const currentText = prev[index] || '';
+          const newLength = Math.min(fullRawText.length, currentText.length + Math.ceil(fullRawText.length / 20));
+          const newText = fullRawText.substring(0, newLength);
+          if (newLength >= fullRawText.length) {
+            clearInterval(fallbackInterval);
+            setReadRecommendations(prevSet => new Set(prevSet).add(index));
+            setActiveStreamingRec(null);
+          }
+          return { ...prev, [index]: newText };
+        });
+      }, estimatedDuration / 20);
+      // Still mark as read after estimated time
+      setTimeout(() => {
+        clearInterval(fallbackInterval);
+        setRecommendationStreams(prev => ({ ...prev, [index]: fullRawText }));
+        setReadRecommendations(prev => new Set(prev).add(index));
+        setActiveStreamingRec(null);
+      }, estimatedDuration);
       currentUtteranceRef.current = null;
     };
 
@@ -569,6 +532,7 @@ const Agent = ({
           console.error("Speech error with", utterance.voice?.name, ":", event);
           if (!resolved) {
             resolved = true;
+            // Try with null voice as fallback (browser default)
             utterance.voice = null;
             window.speechSynthesis.speak(utterance);
           }
