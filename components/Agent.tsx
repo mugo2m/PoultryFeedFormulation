@@ -1,4 +1,4 @@
-// components/Agent.tsx – Natural continuous speech + progressive reveal (onboundary)
+// components/Agent.tsx – Code Two: full text appears immediately, natural speech (fix for Android)
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -102,6 +102,7 @@ const Agent = ({
   const [structuredFinancialAdvice, setStructuredFinancialAdvice] = useState<any>(null);
   const [voicesLoaded, setVoicesLoaded] = useState(false);
   const [readRecommendations, setReadRecommendations] = useState<Set<number>>(new Set());
+  // Store the full text for each slot (once read or currently reading)
   const [recommendationStreams, setRecommendationStreams] = useState<{[key: number]: string}>({});
   const [activeStreamingRec, setActiveStreamingRec] = useState<number | null>(null);
   const nameUsageCountRef = useRef(0);
@@ -399,7 +400,7 @@ const Agent = ({
     return speechText;
   };
 
-  // ========== NATURAL SPEECH + PROGRESSIVE REVEAL (onboundary) ==========
+  // ========== FULL TEXT DISPLAY AT START (fix for Android) ==========
   const streamRecommendationKaraoke = async (rawRecommendation: string, index: number) => {
     if (!voiceEnabled || !window.speechSynthesis) return;
 
@@ -409,7 +410,9 @@ const Agent = ({
     }
 
     setActiveStreamingRec(index);
-    setRecommendationStreams(prev => ({ ...prev, [index]: "" }));
+    // Immediately show the full text (no progressive reveal)
+    setRecommendationStreams(prev => ({ ...prev, [index]: rawRecommendation }));
+    setReadRecommendations(prev => new Set(prev).add(index));
 
     const speechText = prepareForSpeech(rawRecommendation);
     const utterance = new SpeechSynthesisUtterance(speechText);
@@ -420,27 +423,12 @@ const Agent = ({
     utterance.pitch = 1.1;
     utterance.volume = 1.0;
 
-    utterance.onboundary = (event) => {
-      if (event.name === 'word') {
-        const ratio = event.charIndex / speechText.length;
-        const rawIndex = Math.min(rawRecommendation.length, Math.floor(ratio * rawRecommendation.length));
-        const revealed = rawRecommendation.substring(0, rawIndex);
-        setRecommendationStreams(prev => ({ ...prev, [index]: revealed }));
-      }
-    };
-
-    // Wait for the utterance to finish before resolving
     await new Promise<void>((resolve) => {
       utterance.onend = () => {
-        setRecommendationStreams(prev => ({ ...prev, [index]: rawRecommendation }));
-        setReadRecommendations(prev => new Set(prev).add(index));
         setActiveStreamingRec(null);
         resolve();
       };
-      utterance.onerror = (event) => {
-        console.error("Speech error:", event);
-        setRecommendationStreams(prev => ({ ...prev, [index]: rawRecommendation }));
-        setReadRecommendations(prev => new Set(prev).add(index));
+      utterance.onerror = () => {
         setActiveStreamingRec(null);
         resolve();
       };
@@ -654,7 +642,7 @@ const Agent = ({
     return safeT('start_voice_session');
   };
 
-  // ========== RENDER: show only active or previously read slots ==========
+  // ========== RENDER: always show full content (no progressive) ==========
   const renderRecommendationText = (item: StructuredItem, idx: number) => {
     let displayContent = '';
 
@@ -699,9 +687,8 @@ const Agent = ({
     const isRead = readRecommendations.has(idx);
     if (!isActive && !isRead) return null;
 
-    // For active: show progressive text; for read: show full content
-    let finalText = isActive ? (recommendationStreams[idx] || '') : displayContent;
-    if (!finalText) return null;
+    // Always show the full content (no progressive reveal)
+    let finalText = displayContent;
 
     const displaySymbol = getDisplaySymbol();
     const originalSymbol = currency.symbol;
@@ -714,7 +701,6 @@ const Agent = ({
     }
 
     const lines = finalText.split(/\n/);
-    const progressPercent = (recommendationStreams[idx]?.length || 0) / displayContent.length * 100;
 
     return (
       <div
@@ -736,19 +722,6 @@ const Agent = ({
                 </span>
               ))}
             </p>
-            {isActive && (
-              <div className="mt-3 flex items-center gap-2">
-                <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-purple-600 transition-all duration-150"
-                    style={{ width: `${progressPercent}%` }}
-                  />
-                </div>
-                <span className="text-sm text-purple-700 font-medium">
-                  {Math.round(progressPercent)}%
-                </span>
-              </div>
-            )}
           </div>
         </div>
       </div>
