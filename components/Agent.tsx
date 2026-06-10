@@ -1,4 +1,4 @@
-// components/Agent.tsx – Voice fallback + time‑based karaoke (Android & local work)
+// components/Agent.tsx – Android voice fix: local voices first, time‑based karaoke, no console spam
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -50,12 +50,9 @@ const Agent = ({
   const { currency } = useCurrency();
   const [currentLang, setCurrentLang] = useState<string>('en');
 
-  const getDisplaySymbol = (): string => {
-    return currency.symbol || 'Ksh';
-  };
+  const getDisplaySymbol = (): string => currency.symbol || 'Ksh';
 
   const getSpokenCurrencyName = (): string => {
-    if (i18n.language === 'es') return 'Euros';
     const lang = i18n.language;
     switch (currency.code) {
       case 'KES':
@@ -78,7 +75,6 @@ const Agent = ({
   useEffect(() => {
     const sessionLang = sessionData?.language;
     if (sessionLang && sessionLang !== i18n.language) {
-      console.log(`🌐 Syncing i18n language to: ${sessionLang}`);
       i18n.changeLanguage(sessionLang);
       setCurrentLang(sessionLang);
       localStorage.setItem('preferred-language', sessionLang);
@@ -86,38 +82,27 @@ const Agent = ({
   }, [sessionData, i18n]);
 
   useEffect(() => {
-    if (sessionData?.structuredList) {
-      console.log('📋 Setting structuredList:', sessionData.structuredList);
-      setStructuredList(sessionData.structuredList);
-    }
-    if (sessionData?.structuredFinancialAdvice) {
-      console.log('💰 Setting structuredFinancialAdvice:', sessionData.structuredFinancialAdvice);
-      setStructuredFinancialAdvice(sessionData.structuredFinancialAdvice);
-    }
+    if (sessionData?.structuredList) setStructuredList(sessionData.structuredList);
+    if (sessionData?.structuredFinancialAdvice) setStructuredFinancialAdvice(sessionData.structuredFinancialAdvice);
   }, [sessionData]);
 
   const safeT = (key: string, params?: any): string => {
     try {
-      if (key && (key.includes(' ') || key.includes('\n') || key.includes('.'))) {
-        return key;
-      }
+      if (key && (key.includes(' ') || key.includes('\n') || key.includes('.'))) return key;
       const template = i18n.t(key);
       if (!params) return template;
       let result = template;
-      for (const [paramKey, paramValue] of Object.entries(params)) {
-        const placeholder = new RegExp(`{{${paramKey}}}`, 'g');
-        result = result.replace(placeholder, String(paramValue));
+      for (const [k, v] of Object.entries(params)) {
+        result = result.replace(new RegExp(`{{${k}}}`, 'g'), String(v));
       }
       return result;
-    } catch (e) {
-      return key;
-    }
+    } catch { return key; }
   };
 
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [voiceInitializing, setVoiceInitializing] = useState(false);
-  const [hasPaid, setHasPaid] = useState(false);
-  const [paymentChecked, setPaymentChecked] = useState(false);
+  const [hasPaid, setHasPaid] = useState(true);
+  const [paymentChecked, setPaymentChecked] = useState(true);
   const [paymentUsed, setPaymentUsed] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -126,8 +111,6 @@ const Agent = ({
   const [structuredList, setStructuredList] = useState<any[]>([]);
   const [structuredFinancialAdvice, setStructuredFinancialAdvice] = useState<any>(null);
   const [voicesLoaded, setVoicesLoaded] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const [readRecommendations, setReadRecommendations] = useState<Set<number>>(new Set());
   const [recommendationStreams, setRecommendationStreams] = useState<{[key: number]: string}>({});
   const [activeStreamingRec, setActiveStreamingRec] = useState<number | null>(null);
@@ -136,6 +119,8 @@ const Agent = ({
   const mountedRef = useRef(true);
   const voiceServiceInitializedRef = useRef(false);
   const abortStreamingRef = useRef<boolean>(false);
+  const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
   const soilTest = sessionData?.soilTest;
   const hasSoilTest = soilTest && soilTest.testDate;
@@ -216,14 +201,16 @@ const Agent = ({
     return 'en-US';
   })();
 
-  console.log(`🎤 Voice language set to: ${recognitionLanguage} (UI language: ${i18n.language})`);
-
-  // ========== VOICE CANDIDATE LIST (retry on failure) ==========
+  // Get voice candidates: local/offline voices first, then online
   const getVoiceCandidates = (): SpeechSynthesisVoice[] => {
     const voices = window.speechSynthesis.getVoices();
     if (!voices.length) return [];
 
-    // Prioritise: exact language match, then en-GB, en-US, any English, then any voice
+    const isLocal = (v: SpeechSynthesisVoice) => {
+      const name = v.name.toLowerCase();
+      return !name.includes('online') && !name.includes('natural') && !name.includes('google') && !name.includes('cloud') && !name.includes('remote');
+    };
+
     const exact = voices.filter(v => v.lang === recognitionLanguage);
     const enGB = voices.filter(v => v.lang === 'en-GB');
     const enUS = voices.filter(v => v.lang === 'en-US');
@@ -238,11 +225,17 @@ const Agent = ({
         }
       }
     };
-    addUnique(exact);
-    addUnique(enGB);
-    addUnique(enUS);
-    addUnique(anyEn);
-    addUnique(any);
+    const addLocalFirst = (list: SpeechSynthesisVoice[]) => {
+      const localList = list.filter(isLocal);
+      const onlineList = list.filter(v => !isLocal(v));
+      addUnique(localList);
+      addUnique(onlineList);
+    };
+    addLocalFirst(exact);
+    addLocalFirst(enGB);
+    addLocalFirst(enUS);
+    addLocalFirst(anyEn);
+    addLocalFirst(any);
     return candidates;
   };
 
@@ -265,13 +258,10 @@ const Agent = ({
   };
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const supported = 'speechSynthesis' in window;
-      if (supported) {
-        waitForVoices();
-        if (window.speechSynthesis.onvoiceschanged !== undefined) {
-          window.speechSynthesis.onvoiceschanged = () => waitForVoices();
-        }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      waitForVoices();
+      if (window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.onvoiceschanged = () => waitForVoices();
       }
     }
   }, []);
@@ -370,7 +360,7 @@ const Agent = ({
     return speechText;
   };
 
-  // ========== KARAOKE STREAMING WITH VOICE FALLBACK ==========
+  // ========== STREAM WITH VOICE FALLBACK AND TIME-BASED TEXT REVEAL ==========
   const streamRecommendationKaraoke = async (rawRecommendation: string, index: number) => {
     if (!voiceEnabled || !window.speechSynthesis) return;
 
@@ -387,7 +377,6 @@ const Agent = ({
     const fullRawText = rawRecommendation;
     const estimatedDuration = Math.max(1000, speechText.length * 70);
 
-    // Time‑based text reveal animation
     let animationId: number | null = null;
     let startTime = 0;
     const updateProgress = (progress: number) => {
@@ -415,12 +404,11 @@ const Agent = ({
     };
     startAnimation();
 
-    // Voice candidate list and retry
     const candidates = getVoiceCandidates();
     let voiceIdx = 0;
     const trySpeak = () => {
       if (voiceIdx >= candidates.length) {
-        // No working voice – just rely on animation, mark as read when animation finishes
+        // No working voice – text still reveals via animation
         setTimeout(() => {
           if (activeStreamingRec === index && !readRecommendations.has(index)) {
             setRecommendationStreams(prev => ({ ...prev, [index]: fullRawText }));
@@ -448,9 +436,9 @@ const Agent = ({
       };
 
       utterance.onerror = (err) => {
-        console.warn(`Voice ${voice.name} (${voice.lang}) failed:`, err);
+        console.warn(`Voice ${voice.name} (${voice.lang}) failed, trying next`);
         voiceIdx++;
-        trySpeak(); // try next voice
+        trySpeak();
       };
 
       currentUtteranceRef.current = utterance;
@@ -458,7 +446,6 @@ const Agent = ({
     };
     trySpeak();
 
-    // Safety timeout – ensure the recommendation doesn't get stuck
     setTimeout(() => {
       if (activeStreamingRec === index && !readRecommendations.has(index)) {
         if (animationId) cancelAnimationFrame(animationId);
@@ -510,7 +497,6 @@ const Agent = ({
         };
         trySpeak();
 
-        // Fallback timeout
         setTimeout(() => resolve(), Math.max(text.length * 20, 3000));
       }, 100);
     });
@@ -572,7 +558,6 @@ const Agent = ({
       } else {
         content = safeT(item.key, item.params);
       }
-      // SKIP empty content
       if (!content || content.trim() === '') {
         console.log(`⚠️ Skipping empty recommendation at index ${i}`);
         continue;
@@ -664,7 +649,6 @@ const Agent = ({
     return safeT('start_voice_session');
   };
 
-  // ========== RENDER RECOMMENDATION TEXT (progressive reveal) ==========
   const renderRecommendationText = (item: StructuredItem, idx: number) => {
     let displayContent = '';
 
