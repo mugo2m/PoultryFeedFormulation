@@ -1,4 +1,4 @@
-// components/Agent.tsx - Smooth continuous speech + progressive text reveal (works on Android, no voice errors)
+// components/Agent.tsx – Voice fallback + time‑based karaoke (Android & local work)
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -218,32 +218,32 @@ const Agent = ({
 
   console.log(`🎤 Voice language set to: ${recognitionLanguage} (UI language: ${i18n.language})`);
 
-  // RELIABLE VOICE SELECTION – AVOID ONLINE-ONLY VOICES THAT CAUSE ERRORS ON ANDROID
-  const getBestVoice = () => {
+  // ========== VOICE CANDIDATE LIST (retry on failure) ==========
+  const getVoiceCandidates = (): SpeechSynthesisVoice[] => {
     const voices = window.speechSynthesis.getVoices();
-    console.log(`Looking for voice for language: ${recognitionLanguage}, total voices: ${voices.length}`);
+    if (!voices.length) return [];
 
-    // Filter out voices that are likely to fail on Android (online/natural only)
-    const isLocalVoice = (voice: SpeechSynthesisVoice) => {
-      const name = voice.name.toLowerCase();
-      return !name.includes('online') && !name.includes('natural') && !name.includes('google');
+    // Prioritise: exact language match, then en-GB, en-US, any English, then any voice
+    const exact = voices.filter(v => v.lang === recognitionLanguage);
+    const enGB = voices.filter(v => v.lang === 'en-GB');
+    const enUS = voices.filter(v => v.lang === 'en-US');
+    const anyEn = voices.filter(v => v.lang.startsWith('en'));
+    const any = [...voices];
+
+    const candidates: SpeechSynthesisVoice[] = [];
+    const addUnique = (list: SpeechSynthesisVoice[]) => {
+      for (const v of list) {
+        if (!candidates.some(ex => ex.name === v.name && ex.lang === v.lang)) {
+          candidates.push(v);
+        }
+      }
     };
-
-    // First try to find a local voice matching the exact language
-    let selected = voices.find(v => v.lang === recognitionLanguage && isLocalVoice(v));
-    if (!selected) selected = voices.find(v => v.lang === recognitionLanguage);
-    if (!selected && recognitionLanguage.startsWith('en')) {
-      selected = voices.find(v => v.lang.startsWith('en') && isLocalVoice(v));
-    }
-    if (!selected) selected = voices.find(v => v.lang.startsWith('en'));
-    if (!selected && voices.length > 0) selected = voices[0];
-
-    if (selected) {
-      console.log(`✅ Selected voice: ${selected.name} (${selected.lang})`);
-    } else {
-      console.warn(`⚠️ No voice found, will use default`);
-    }
-    return { voice: selected || null, language: recognitionLanguage };
+    addUnique(exact);
+    addUnique(enGB);
+    addUnique(enUS);
+    addUnique(anyEn);
+    addUnique(any);
+    return candidates;
   };
 
   const waitForVoices = (maxAttempts = 10): Promise<void> => {
@@ -370,11 +370,10 @@ const Agent = ({
     return speechText;
   };
 
-  // ========== SMOOTH CONTINUOUS SPEECH + TIME-BASED PROGRESSIVE REVEAL ==========
+  // ========== KARAOKE STREAMING WITH VOICE FALLBACK ==========
   const streamRecommendationKaraoke = async (rawRecommendation: string, index: number) => {
     if (!voiceEnabled || !window.speechSynthesis) return;
 
-    // Cancel any ongoing speech
     if (window.speechSynthesis.speaking) {
       window.speechSynthesis.cancel();
       await new Promise(resolve => setTimeout(resolve, 200));
@@ -382,105 +381,84 @@ const Agent = ({
 
     abortStreamingRef.current = false;
     setActiveStreamingRec(index);
-    // Start with empty displayed text
     setRecommendationStreams(prev => ({ ...prev, [index]: "" }));
 
-    // Prepare the text for speaking (currency replaced, farmer name, etc.)
     const speechText = prepareForSpeech(rawRecommendation);
     const fullRawText = rawRecommendation;
-
-    // Estimate total speaking duration: average 70ms per character (adjustable)
     const estimatedDuration = Math.max(1000, speechText.length * 70);
 
-    // Create the utterance for smooth continuous speech
-    const utterance = new SpeechSynthesisUtterance(speechText);
-    const { voice, language } = getBestVoice();
-    if (voice) utterance.voice = voice;
-    utterance.lang = language;
-    utterance.rate = 0.9;
-    utterance.pitch = 1.1;
-    utterance.volume = 1.0;
-
+    // Time‑based text reveal animation
     let animationId: number | null = null;
     let startTime = 0;
-
-    // Function to update displayed text based on progress (0 to 1)
     const updateProgress = (progress: number) => {
       if (abortStreamingRef.current) return;
       const charIndex = Math.floor(progress * fullRawText.length);
-      const partialText = fullRawText.substring(0, charIndex);
-      setRecommendationStreams(prev => ({ ...prev, [index]: partialText }));
+      setRecommendationStreams(prev => ({ ...prev, [index]: fullRawText.substring(0, charIndex) }));
     };
-
-    // Start time-based animation
-    const animate = (timestamp: number) => {
-      if (abortStreamingRef.current) {
-        if (animationId) cancelAnimationFrame(animationId);
-        return;
-      }
-      if (!startTime) startTime = timestamp;
-      const elapsed = timestamp - startTime;
-      let progress = Math.min(1, elapsed / estimatedDuration);
-      updateProgress(progress);
-      if (progress < 1) {
-        animationId = requestAnimationFrame(animate);
-      } else {
-        // Ensure full text is shown at the end
-        setRecommendationStreams(prev => ({ ...prev, [index]: fullRawText }));
-        if (animationId) cancelAnimationFrame(animationId);
-        animationId = null;
-      }
-    };
-
-    // Start animation
-    animationId = requestAnimationFrame(animate);
-
-    // When speech ends, ensure full text and clean up
-    utterance.onend = () => {
+    const startAnimation = () => {
       if (animationId) cancelAnimationFrame(animationId);
-      setRecommendationStreams(prev => ({ ...prev, [index]: fullRawText }));
-      setReadRecommendations(prev => new Set(prev).add(index));
-      setActiveStreamingRec(null);
-      currentUtteranceRef.current = null;
-    };
-
-    utterance.onerror = (event) => {
-      console.error("Speech error:", event);
-      if (animationId) cancelAnimationFrame(animationId);
-      // Even if speech fails, still reveal text progressively over the estimated time
-      // This ensures the user sees the content even without audio
-      const fallbackInterval = setInterval(() => {
-        if (abortStreamingRef.current) {
-          clearInterval(fallbackInterval);
-          return;
+      startTime = 0;
+      const animate = (timestamp: number) => {
+        if (abortStreamingRef.current) return;
+        if (!startTime) startTime = timestamp;
+        const elapsed = timestamp - startTime;
+        const progress = Math.min(1, elapsed / estimatedDuration);
+        updateProgress(progress);
+        if (progress < 1) {
+          animationId = requestAnimationFrame(animate);
+        } else {
+          setRecommendationStreams(prev => ({ ...prev, [index]: fullRawText }));
+          animationId = null;
         }
-        setRecommendationStreams(prev => {
-          const currentText = prev[index] || '';
-          const newLength = Math.min(fullRawText.length, currentText.length + Math.ceil(fullRawText.length / 20));
-          const newText = fullRawText.substring(0, newLength);
-          if (newLength >= fullRawText.length) {
-            clearInterval(fallbackInterval);
-            setReadRecommendations(prevSet => new Set(prevSet).add(index));
+      };
+      animationId = requestAnimationFrame(animate);
+    };
+    startAnimation();
+
+    // Voice candidate list and retry
+    const candidates = getVoiceCandidates();
+    let voiceIdx = 0;
+    const trySpeak = () => {
+      if (voiceIdx >= candidates.length) {
+        // No working voice – just rely on animation, mark as read when animation finishes
+        setTimeout(() => {
+          if (activeStreamingRec === index && !readRecommendations.has(index)) {
+            setRecommendationStreams(prev => ({ ...prev, [index]: fullRawText }));
+            setReadRecommendations(prev => new Set(prev).add(index));
             setActiveStreamingRec(null);
           }
-          return { ...prev, [index]: newText };
-        });
-      }, estimatedDuration / 20);
-      // Still mark as read after estimated time
-      setTimeout(() => {
-        clearInterval(fallbackInterval);
+        }, estimatedDuration + 500);
+        return;
+      }
+
+      const utterance = new SpeechSynthesisUtterance(speechText);
+      const voice = candidates[voiceIdx];
+      utterance.voice = voice;
+      utterance.lang = voice.lang;
+      utterance.rate = 0.9;
+      utterance.pitch = 1.1;
+      utterance.volume = 1.0;
+
+      utterance.onend = () => {
+        if (animationId) cancelAnimationFrame(animationId);
         setRecommendationStreams(prev => ({ ...prev, [index]: fullRawText }));
         setReadRecommendations(prev => new Set(prev).add(index));
         setActiveStreamingRec(null);
-      }, estimatedDuration);
-      currentUtteranceRef.current = null;
+        currentUtteranceRef.current = null;
+      };
+
+      utterance.onerror = (err) => {
+        console.warn(`Voice ${voice.name} (${voice.lang}) failed:`, err);
+        voiceIdx++;
+        trySpeak(); // try next voice
+      };
+
+      currentUtteranceRef.current = utterance;
+      window.speechSynthesis.speak(utterance);
     };
+    trySpeak();
 
-    // Start speaking
-    window.speechSynthesis.speak(utterance);
-    currentUtteranceRef.current = utterance;
-
-    // Safety timeout: if speech takes longer than estimated, force full text
+    // Safety timeout – ensure the recommendation doesn't get stuck
     setTimeout(() => {
       if (activeStreamingRec === index && !readRecommendations.has(index)) {
         if (animationId) cancelAnimationFrame(animationId);
@@ -488,7 +466,7 @@ const Agent = ({
         setReadRecommendations(prev => new Set(prev).add(index));
         setActiveStreamingRec(null);
       }
-    }, estimatedDuration + 1500);
+    }, estimatedDuration + 2000);
   };
 
   const speakWithVoice = async (text: string): Promise<void> => {
@@ -508,44 +486,32 @@ const Agent = ({
 
       setTimeout(() => {
         const speechText = prepareForSpeech(text);
-        const utterance = new SpeechSynthesisUtterance(speechText);
-        utterance.rate = 0.9;
-        utterance.pitch = 1.1;
-        utterance.volume = 1.0;
-
-        const { voice, language } = getBestVoice();
-        utterance.voice = voice;
-        utterance.lang = language;
-
-        console.log(`🔊 Speaking with voice: ${utterance.voice?.name || 'default'} (${utterance.lang})`);
-
-        let resolved = false;
-
-        utterance.onend = () => {
-          if (!resolved) {
-            resolved = true;
+        const candidates = getVoiceCandidates();
+        let idx = 0;
+        const trySpeak = () => {
+          if (idx >= candidates.length) {
             resolve();
+            return;
           }
+          const utterance = new SpeechSynthesisUtterance(speechText);
+          const voice = candidates[idx];
+          utterance.voice = voice;
+          utterance.lang = voice.lang;
+          utterance.rate = 0.9;
+          utterance.pitch = 1.1;
+          utterance.volume = 1.0;
+
+          utterance.onend = () => resolve();
+          utterance.onerror = () => {
+            idx++;
+            trySpeak();
+          };
+          window.speechSynthesis.speak(utterance);
         };
+        trySpeak();
 
-        utterance.onerror = (event) => {
-          console.error("Speech error with", utterance.voice?.name, ":", event);
-          if (!resolved) {
-            resolved = true;
-            // Try with null voice as fallback (browser default)
-            utterance.voice = null;
-            window.speechSynthesis.speak(utterance);
-          }
-        };
-
-        window.speechSynthesis.speak(utterance);
-
-        setTimeout(() => {
-          if (!resolved) {
-            resolved = true;
-            resolve();
-          }
-        }, Math.max(text.length * 20, 3000));
+        // Fallback timeout
+        setTimeout(() => resolve(), Math.max(text.length * 20, 3000));
       }, 100);
     });
   };
@@ -698,7 +664,7 @@ const Agent = ({
     return safeT('start_voice_session');
   };
 
-  // ========== RENDER RECOMMENDATION TEXT – progressive reveal ==========
+  // ========== RENDER RECOMMENDATION TEXT (progressive reveal) ==========
   const renderRecommendationText = (item: StructuredItem, idx: number) => {
     let displayContent = '';
 
@@ -743,10 +709,8 @@ const Agent = ({
     const isActive = activeStreamingRec === idx;
     const isRead = readRecommendations.has(idx);
 
-    // Show ONLY if actively streaming or already fully read
     if (!isActive && !isRead) return null;
 
-    // Show partial text if active, full text if read
     const finalText = isActive ? displayedText : displayContent;
     if (!finalText) return null;
 
@@ -761,7 +725,6 @@ const Agent = ({
       processedText = processedText.replace(/Ksh/g, displaySymbol);
     }
 
-    // Split by newlines for rendering (preserves line breaks)
     const lines = processedText.split(/\n/);
     const progressPercent = (displayedText.length / displayContent.length) * 100;
 
