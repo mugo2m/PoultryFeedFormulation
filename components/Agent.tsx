@@ -1,4 +1,4 @@
-// components/Agent.tsx - Word-by-word progressive reveal (works on Android)
+// components/Agent.tsx - Normal reading (full text displayed immediately, natural speech)
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -131,7 +131,6 @@ const Agent = ({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const [readRecommendations, setReadRecommendations] = useState<Set<number>>(new Set());
-  // Store displayed text (word-by-word) as string for each recommendation
   const [recommendationStreams, setRecommendationStreams] = useState<{[key: number]: string}>({});
   const [activeStreamingRec, setActiveStreamingRec] = useState<number | null>(null);
   const isAISpeakingRef = useRef(false);
@@ -139,7 +138,6 @@ const Agent = ({
   const voiceServiceRef = useRef<VoiceService | null>(null);
   const mountedRef = useRef(true);
   const voiceServiceInitializedRef = useRef(false);
-  const abortStreamingRef = useRef<boolean>(false);
 
   const soilTest = sessionData?.soilTest;
   const hasSoilTest = soilTest && soilTest.testDate;
@@ -431,9 +429,7 @@ const Agent = ({
     return speechText;
   };
 
-  // ========== WORD-BY-WORD STREAMING (WORKS ON ANDROID) ==========
-  // Instead of using onboundary (unreliable on Android), we split into words,
-  // speak each word sequentially, and update the displayed text after each word.
+  // ========== NORMAL READING: full text appears immediately, then speaks ==========
   const streamRecommendationKaraoke = async (rawRecommendation: string, index: number) => {
     if (!voiceEnabled || !window.speechSynthesis) return;
 
@@ -443,62 +439,27 @@ const Agent = ({
       await new Promise(resolve => setTimeout(resolve, 200));
     }
 
-    abortStreamingRef.current = false;
     setActiveStreamingRec(index);
-    // Start with empty displayed text
-    setRecommendationStreams(prev => ({ ...prev, [index]: "" }));
-
-    // Prepare speech text (currency replaced, farmer name, etc.)
-    const speechText = prepareForSpeech(rawRecommendation);
-    // Split into words (preserving spacing later)
-    const words = speechText.split(/\s+/);
-    // For display, we want to show the original rawRecommendation but progressively.
-    // Since rawRecommendation may have line breaks and different wording,
-    // we'll build the displayed text word by word using the rawRecommendation words.
-    // To keep alignment simple, we'll use the rawRecommendation split into words.
-    // But because rawRecommendation might not match speechText exactly (currency replaced),
-    // we'll instead build from rawRecommendation directly.
-    const rawWords = rawRecommendation.split(/\s+/);
-    let displayedWordCount = 0;
-
-    for (let i = 0; i < words.length; i++) {
-      if (abortStreamingRef.current) break;
-
-      const word = words[i];
-      const utterance = new SpeechSynthesisUtterance(word);
-      const { voice, language } = getBestVoice();
-      if (voice) utterance.voice = voice;
-      utterance.lang = language;
-      utterance.rate = 0.9;
-      utterance.pitch = 1.1;
-      utterance.volume = 1.0;
-
-      // Update displayed text after speaking the word?
-      // To show word as it's spoken, we update before speaking, but the word appears slightly before audio.
-      // For better sync, update after the word finishes, but then it lags.
-      // We'll update before speaking so text appears immediately, then speech follows.
-      displayedWordCount++;
-      // Build displayed text from rawRecommendation words (preserve original line breaks by using rawRecommendation substring)
-      // Simpler: build from rawRecommendation substring up to the approximate character position.
-      // We'll use a character index based on word ratio.
-      const ratio = displayedWordCount / words.length;
-      const charIndex = Math.min(rawRecommendation.length, Math.floor(ratio * rawRecommendation.length));
-      const displayedText = rawRecommendation.substring(0, charIndex);
-      setRecommendationStreams(prev => ({ ...prev, [index]: displayedText }));
-
-      await new Promise<void>((resolve) => {
-        utterance.onend = () => resolve();
-        utterance.onerror = () => resolve();
-        window.speechSynthesis.speak(utterance);
-      });
-
-      // Small pause between words to avoid machine-gun effect
-      await new Promise(resolve => setTimeout(resolve, 60));
-    }
-
-    // Mark as fully read
+    // Show the full content immediately
     setRecommendationStreams(prev => ({ ...prev, [index]: rawRecommendation }));
     setReadRecommendations(prev => new Set(prev).add(index));
+
+    // Prepare speech text (currency replacements, farmer name adjustments)
+    const speechText = prepareForSpeech(rawRecommendation);
+    const utterance = new SpeechSynthesisUtterance(speechText);
+    const { voice, language } = getBestVoice();
+    if (voice) utterance.voice = voice;
+    utterance.lang = language;
+    utterance.rate = 0.9;
+    utterance.pitch = 1.1;
+    utterance.volume = 1.0;
+
+    await new Promise<void>((resolve) => {
+      utterance.onend = () => resolve();
+      utterance.onerror = () => resolve();
+      window.speechSynthesis.speak(utterance);
+    });
+
     setActiveStreamingRec(null);
     currentUtteranceRef.current = null;
   };
@@ -709,7 +670,7 @@ const Agent = ({
     return safeT('start_voice_session');
   };
 
-  // ========== RENDER RECOMMENDATION TEXT – progressive reveal ==========
+  // ========== RENDER RECOMMENDATION TEXT – always full content ==========
   const renderRecommendationText = (item: StructuredItem, idx: number) => {
     let displayContent = '';
 
@@ -750,31 +711,25 @@ const Agent = ({
       return null;
     }
 
-    const displayedText = recommendationStreams[idx] || '';
     const isActive = activeStreamingRec === idx;
     const isRead = readRecommendations.has(idx);
 
     if (!isActive && !isRead) return null;
 
-    // For active streaming, we show the progressively revealed text (which may be partial)
-    // For finished (read), show full content
-    let finalText = isRead ? displayContent : displayedText;
-    if (!finalText) return null;
+    // Always show the full content (no progressive reveal)
+    let finalText = displayContent;
 
     const displaySymbol = getDisplaySymbol();
     const originalSymbol = currency.symbol;
-    let processedText = finalText;
     if (displaySymbol !== originalSymbol) {
       const escapedOrig = originalSymbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      processedText = processedText.replace(new RegExp(escapedOrig, 'g'), displaySymbol);
+      finalText = finalText.replace(new RegExp(escapedOrig, 'g'), displaySymbol);
     }
     if (displaySymbol !== 'Ksh') {
-      processedText = processedText.replace(/Ksh/g, displaySymbol);
+      finalText = finalText.replace(/Ksh/g, displaySymbol);
     }
 
-    // Split by newlines for rendering
-    const lines = processedText.split(/\n/);
-    const progressPercent = (displayedText.length / displayContent.length) * 100;
+    const lines = finalText.split(/\n/);
 
     return (
       <div
@@ -796,19 +751,6 @@ const Agent = ({
                 </span>
               ))}
             </p>
-            {isActive && displayContent.length > 0 && (
-              <div className="mt-3 flex items-center gap-2">
-                <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-purple-600 transition-all duration-150"
-                    style={{ width: `${progressPercent}%` }}
-                  />
-                </div>
-                <span className="text-sm text-purple-700 font-medium">
-                  {Math.round(progressPercent)}%
-                </span>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -882,7 +824,7 @@ const Agent = ({
             <VolumeX className="w-6 h-6 text-yellow-600" />
             <div>
               <p className="font-semibold text-yellow-800">Voice is OFF</p>
-              <p className="text-sm text-yellow-700">Click "Voice ON" above, then "Start Voice Session" to hear recommendations with karaoke effect.</p>
+              <p className="text-sm text-yellow-700">Click "Voice ON" above, then "Start Voice Session" to hear recommendations with normal reading.</p>
             </div>
           </div>
         </div>
