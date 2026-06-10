@@ -1,4 +1,4 @@
-// components/Agent.tsx – Reliable word‑by‑word karaoke (no skipping, works on Android)
+// components/Agent.tsx – Natural continuous speech + progressive reveal (onboundary)
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -109,7 +109,6 @@ const Agent = ({
   const mountedRef = useRef(true);
   const voiceServiceInitializedRef = useRef(false);
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
-  const abortFlag = useRef(false);
 
   const soilTest = sessionData?.soilTest;
   const hasSoilTest = soilTest && soilTest.testDate;
@@ -400,7 +399,7 @@ const Agent = ({
     return speechText;
   };
 
-  // ========== RELIABLE WORD-BY-WORD STREAMING (no skipping) ==========
+  // ========== NATURAL SPEECH + PROGRESSIVE REVEAL (onboundary) ==========
   const streamRecommendationKaraoke = async (rawRecommendation: string, index: number) => {
     if (!voiceEnabled || !window.speechSynthesis) return;
 
@@ -409,40 +408,45 @@ const Agent = ({
       await new Promise(r => setTimeout(r, 200));
     }
 
-    abortFlag.current = false;
     setActiveStreamingRec(index);
     setRecommendationStreams(prev => ({ ...prev, [index]: "" }));
 
-    const words = rawRecommendation.split(/\s+/);
-    let displayed = '';
+    const speechText = prepareForSpeech(rawRecommendation);
+    const utterance = new SpeechSynthesisUtterance(speechText);
+    const { voice, language } = getBestVoice();
+    if (voice) utterance.voice = voice;
+    utterance.lang = language;
+    utterance.rate = 0.9;
+    utterance.pitch = 1.1;
+    utterance.volume = 1.0;
 
-    for (let i = 0; i < words.length; i++) {
-      if (abortFlag.current) break;
-      displayed += (i === 0 ? words[i] : ' ' + words[i]);
-      setRecommendationStreams(prev => ({ ...prev, [index]: displayed }));
+    utterance.onboundary = (event) => {
+      if (event.name === 'word') {
+        const ratio = event.charIndex / speechText.length;
+        const rawIndex = Math.min(rawRecommendation.length, Math.floor(ratio * rawRecommendation.length));
+        const revealed = rawRecommendation.substring(0, rawIndex);
+        setRecommendationStreams(prev => ({ ...prev, [index]: revealed }));
+      }
+    };
 
-      const wordUtterance = new SpeechSynthesisUtterance(words[i]);
-      const { voice, language } = getBestVoice();
-      if (voice) wordUtterance.voice = voice;
-      wordUtterance.lang = language;
-      wordUtterance.rate = 0.9;
-      wordUtterance.pitch = 1.1;
-      wordUtterance.volume = 1.0;
-
-      await new Promise<void>((resolve) => {
-        wordUtterance.onend = () => resolve();
-        wordUtterance.onerror = () => resolve();
-        window.speechSynthesis.speak(wordUtterance);
-      });
-      // Small pause between words (prevents audio overlap, optional)
-      await new Promise(r => setTimeout(r, 50));
-    }
-
-    // Mark as fully read
-    setRecommendationStreams(prev => ({ ...prev, [index]: rawRecommendation }));
-    setReadRecommendations(prev => new Set(prev).add(index));
-    setActiveStreamingRec(null);
-    currentUtteranceRef.current = null;
+    // Wait for the utterance to finish before resolving
+    await new Promise<void>((resolve) => {
+      utterance.onend = () => {
+        setRecommendationStreams(prev => ({ ...prev, [index]: rawRecommendation }));
+        setReadRecommendations(prev => new Set(prev).add(index));
+        setActiveStreamingRec(null);
+        resolve();
+      };
+      utterance.onerror = (event) => {
+        console.error("Speech error:", event);
+        setRecommendationStreams(prev => ({ ...prev, [index]: rawRecommendation }));
+        setReadRecommendations(prev => new Set(prev).add(index));
+        setActiveStreamingRec(null);
+        resolve();
+      };
+      window.speechSynthesis.speak(utterance);
+      currentUtteranceRef.current = utterance;
+    });
   };
 
   const speakWithVoice = async (text: string): Promise<void> => {
