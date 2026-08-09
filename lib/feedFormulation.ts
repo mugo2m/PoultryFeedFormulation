@@ -1,54 +1,32 @@
-// app/api/vapi/generate/route.ts – Complete Poultry Feed Formulation API (no reduction, no symbols)
-import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/firebase/admin";
-import { COUNTRY_CURRENCY_MAP, DEFAULT_CURRENCY } from "@/lib/config/currency";
+// lib/feedFormulation.ts
+// Complete Poultry Feed Formulation Engine
+// This module calculates custom feed formulations based on breed, stage, quantity, available ingredients, and custom prices.
 
-console.log("🐔 Poultry Feed Formulation Route Loaded");
-
-// ========== TIMEOUT UTILITY ==========
-const withTimeout = <T>(promise: Promise<T>, ms: number, errorMessage: string = "Operation timed out"): Promise<T> => {
-  let timeoutId: NodeJS.Timeout;
-  const timeoutPromise = new Promise<T>((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(errorMessage)), ms);
-  });
-  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
-};
-
-// ========== CACHING ==========
-const cache = new Map();
-const CACHE_TTL = 10 * 60 * 1000;
-
-function getCacheKey(inputs: any): string {
-  const { breed, stage, quantityKg, includeCoccidiostat, country, ingredientPrices } = inputs;
-  const priceString = ingredientPrices ? JSON.stringify(ingredientPrices) : '';
-  return JSON.stringify({ breed, stage, quantityKg, includeCoccidiostat, country, priceString });
+export interface Ingredient {
+  name: string;
+  amountKg: number;      // Amount needed for the batch (after adjusting for available ingredients)
+  percent: number;       // Percentage in the formula
+  cost: number;          // Total cost for this ingredient in the batch
+  pricePerKg: number;    // Price per kg (in KES equivalent)
+  available: boolean;    // True if the farmer already has this ingredient
 }
 
-// ========== CURRENCY HELPERS ==========
-function getCurrencyForCountry(country: string = 'kenya'): { symbol: string; name: string; code: string } {
-  const normalized = country.toLowerCase();
-  const currency = COUNTRY_CURRENCY_MAP[normalized] || COUNTRY_CURRENCY_MAP.kenya;
-  return {
-    symbol: currency.symbol,
-    name: currency.name,
-    code: currency.code,
-  };
+export interface NutritionalSummary {
+  protein: number;       // Crude protein %
+  calcium: number;       // Calcium %
+  energy: number;        // Energy in kcal/kg (ME)
 }
 
-function formatCurrencyForCountry(amount: number, country: string = 'kenya'): string {
-  const normalized = country.toLowerCase();
-  const currency = COUNTRY_CURRENCY_MAP[normalized] || COUNTRY_CURRENCY_MAP.kenya;
-  return new Intl.NumberFormat(currency.locale, {
-    style: 'currency',
-    currency: currency.code,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: currency.decimalPlaces
-  }).format(amount);
+export interface FeedResult {
+  ingredients: Ingredient[];
+  totalCost: number;     // Total cost in base currency (KES or local)
+  nutritionalSummary: NutritionalSummary;
+  mixingInstructions: string;
+  warnings: string[];
+  structuredList: Array<{ key: string; params: { content: string } }>; // For voice/display
 }
 
-// ========== FEED FORMULATION LOGIC ==========
-
-// Ingredient price per kg (default values in KES) – ALL 17 INGREDIENTS
+// ========== DEFAULT INGREDIENT PRICES (KES per kg) ==========
 const DEFAULT_INGREDIENT_PRICES: Record<string, number> = {
   'broken maize': 40,
   'soya bean meal': 150,
@@ -69,7 +47,7 @@ const DEFAULT_INGREDIENT_PRICES: Record<string, number> = {
   'toxin binder': 200,
 };
 
-// Country-specific price adjustments (multipliers)
+// ========== COUNTRY PRICE MULTIPLIERS ==========
 const COUNTRY_PRICE_MULTIPLIERS: Record<string, number> = {
   'kenya': 1.0,
   'uganda': 1.1,
@@ -85,18 +63,33 @@ const COUNTRY_PRICE_MULTIPLIERS: Record<string, number> = {
   'ethiopia': 1.2,
 };
 
-function getDefaultIngredientPrice(ingredient: string, country: string): number {
-  const basePrice = DEFAULT_INGREDIENT_PRICES[ingredient.toLowerCase()] || 100;
+// ========== GET INGREDIENT PRICE (with custom override) ==========
+function getIngredientPrice(
+  ingredient: string,
+  country: string = 'kenya',
+  customPrices?: Record<string, number>
+): number {
+  const normalizedIngredient = ingredient.toLowerCase().trim();
+  // If custom price provided and valid, use it
+  if (customPrices && customPrices[normalizedIngredient] !== undefined && customPrices[normalizedIngredient] > 0) {
+    return customPrices[normalizedIngredient];
+  }
+  // Otherwise use default with country multiplier
+  const basePrice = DEFAULT_INGREDIENT_PRICES[normalizedIngredient] || 100;
   const multiplier = COUNTRY_PRICE_MULTIPLIERS[country.toLowerCase()] || 1.0;
   return basePrice * multiplier;
 }
 
-// Base formulas per breed and stage (in % of total) – UPDATED WITH 17 INGREDIENTS & CORRECTED PERCENTAGES
+// ========== FEED FORMULAS ==========
+// Each formula is a percentage breakdown of ingredients for 100 kg of feed.
+// Format: { ingredientName: percentage }
+// ALL FORMULAS NOW SUM TO EXACTLY 100.00%
 interface FeedFormula {
   [ingredient: string]: number;
 }
 
 const FORMULAS: Record<string, Record<string, FeedFormula>> = {
+  // BREED: Local
   'local': {
     'starter': {
       'broken maize': 53.45,
@@ -156,6 +149,8 @@ const FORMULAS: Record<string, Record<string, FeedFormula>> = {
       'toxin binder': 0.1,
     },
   },
+
+  // BREED: Layers (commercial)
   'layers': {
     'starter': {
       'broken maize': 53.45,
@@ -215,6 +210,8 @@ const FORMULAS: Record<string, Record<string, FeedFormula>> = {
       'toxin binder': 0.1,
     },
   },
+
+  // BREED: Sasso
   'sasso': {
     'starter': {
       'broken maize': 53.45,
@@ -274,6 +271,8 @@ const FORMULAS: Record<string, Record<string, FeedFormula>> = {
       'toxin binder': 0.1,
     },
   },
+
+  // BREED: Kenbrew
   'kenbrew': {
     'starter': {
       'broken maize': 53.45,
@@ -333,6 +332,8 @@ const FORMULAS: Record<string, Record<string, FeedFormula>> = {
       'toxin binder': 0.1,
     },
   },
+
+  // BREED: Kroiler
   'kroiler': {
     'starter': {
       'broken maize': 53.45,
@@ -392,6 +393,8 @@ const FORMULAS: Record<string, Record<string, FeedFormula>> = {
       'toxin binder': 0.1,
     },
   },
+
+  // BREED: Broiler
   'broiler': {
     'starter': {
       'broken maize': 52.65,
@@ -432,6 +435,8 @@ const FORMULAS: Record<string, Record<string, FeedFormula>> = {
       'toxin binder': 0.1,
     },
   },
+
+  // BREED: Sussex
   'sussex': {
     'starter': {
       'broken maize': 53.45,
@@ -493,7 +498,7 @@ const FORMULAS: Record<string, Record<string, FeedFormula>> = {
   },
 };
 
-// Nutritional targets per stage – UPDATED: Starter Calcium to 1.0, Layer Protein to 16.5
+// ========== NUTRITIONAL TARGETS ==========
 const NUTRITION_TARGETS: Record<string, { protein: number; calcium: number; energy: number }> = {
   'starter': { protein: 19, calcium: 1.0, energy: 2800 },
   'grower': { protein: 16.5, calcium: 0.9, energy: 2700 },
@@ -501,47 +506,48 @@ const NUTRITION_TARGETS: Record<string, { protein: number; calcium: number; ener
   'finisher': { protein: 20, calcium: 0.7, energy: 2900 },
 };
 
-// ========== MAIN FORMULATION FUNCTION (no reduction) ==========
-function formulateFeed(params: {
+// ========== MAIN FORMULATION FUNCTION ==========
+export function formulateFeed(params: {
   breed: string;
   stage: string;
   quantityKg: number;
   includeCoccidiostat: boolean;
+  availableIngredients?: string[];
   country?: string;
   ingredientPrices?: Record<string, number>;
-}) {
+}): FeedResult {
   const {
     breed,
     stage,
     quantityKg,
     includeCoccidiostat,
+    availableIngredients = [],
     country = 'kenya',
     ingredientPrices = {},
   } = params;
 
+  // Normalize inputs
   const breedKey = breed.toLowerCase().trim();
   const stageKey = stage.toLowerCase().includes('starter') ? 'starter' :
                    stage.toLowerCase().includes('grower') ? 'grower' :
                    stage.toLowerCase().includes('layer') ? 'layer' :
                    stage.toLowerCase().includes('finisher') ? 'finisher' : 'starter';
 
+  // Validate breed and stage exist
   const breedFormulas = FORMULAS[breedKey];
   if (!breedFormulas) {
-    throw new Error(`Unsupported breed: ${breed}`);
+    throw new Error(`Unsupported breed: ${breed}. Supported breeds are: ${Object.keys(FORMULAS).join(', ')}`);
   }
   const formula = breedFormulas[stageKey];
   if (!formula) {
-    throw new Error(`Unsupported stage: ${stage} for breed ${breed}`);
+    throw new Error(`Unsupported stage: ${stage} for breed ${breed}. Supported stages are: ${Object.keys(breedFormulas).join(', ')}`);
   }
 
+  // Calculate ingredient amounts (percentages * factor)
   const factor = quantityKg / 100;
-
-  const ingredients = Object.entries(formula).map(([name, percent]) => {
+  const ingredients: Ingredient[] = Object.entries(formula).map(([name, percent]) => {
     const amount = percent * factor;
-    const customPrice = ingredientPrices[name];
-    const pricePerKg = (customPrice !== undefined && customPrice > 0)
-      ? customPrice
-      : getDefaultIngredientPrice(name, country);
+    const pricePerKg = getIngredientPrice(name, country, ingredientPrices);
     const cost = amount * pricePerKg;
     return {
       name,
@@ -549,13 +555,44 @@ function formulateFeed(params: {
       percent: parseFloat(percent.toFixed(2)),
       cost: parseFloat(cost.toFixed(2)),
       pricePerKg: parseFloat(pricePerKg.toFixed(2)),
+      available: false,
     };
   });
 
-  const finalIngredients = ingredients.filter(ing => ing.amountKg > 0.01);
+  // Subtract available ingredients (reduce needed quantity by 50% if farmer has some)
+  const adjustedIngredients = ingredients.map(ing => {
+    const hasIngredient = availableIngredients.some(avail =>
+      avail.toLowerCase().includes(ing.name.toLowerCase())
+    );
+    if (hasIngredient) {
+      const reducedAmount = ing.amountKg * 0.5;
+      const reducedCost = reducedAmount * ing.pricePerKg;
+      return {
+        ...ing,
+        amountKg: parseFloat(reducedAmount.toFixed(3)),
+        cost: parseFloat(reducedCost.toFixed(2)),
+        available: true,
+      };
+    }
+    return ing;
+  });
+
+  // Remove ingredients with zero amount
+  const finalIngredients = adjustedIngredients.filter(ing => ing.amountKg > 0.01);
+
+  // Calculate total cost
   const totalCost = finalIngredients.reduce((sum, ing) => sum + ing.cost, 0);
+
+  // Build ingredient lines for display
+  const ingredientLines = finalIngredients.map(ing => {
+    const availText = ing.available ? ' (you have some)' : '';
+    return `${ing.name}: ${ing.amountKg.toFixed(2)} kg (${ing.cost.toFixed(2)})${availText}`;
+  });
+
+  // Nutritional summary
   const nutrition = NUTRITION_TARGETS[stageKey] || NUTRITION_TARGETS['starter'];
 
+  // Warnings
   const warnings: string[] = [];
   if (stageKey === 'layer' && includeCoccidiostat) {
     warnings.push("⚠️ Coccidiostat is NOT allowed for laying hens – it has been removed from this formula.");
@@ -563,27 +600,21 @@ function formulateFeed(params: {
   if (stageKey === 'finisher') {
     warnings.push("⚠️ Withdraw coccidiostat 5–7 days before slaughter if used.");
   }
-
-  // ========== UPDATED MIXING INSTRUCTIONS ==========
-  let mixingInstructions = "";
-  // Pre-mix minerals with carrier (maize bran, wheat bran, or maize germ)
-  const baseMixing = "For best results, first pre-mix all minerals (lime, dcp, salt, premix, methionine, lysine, threonine, tryptophan, and toxin binder) with 3 kg of maize bran, wheat bran, or maize germ. Mix thoroughly to ensure even distribution. Then combine this mineral premix with the remaining ingredients. Grind maize and soya meal to a fine powder before final mixing.";
-
-  if (stageKey === 'starter') {
-    mixingInstructions = baseMixing + " Starter feed should be crumbled or mashed for young chicks.";
-  } else if (stageKey === 'layer') {
-    mixingInstructions = baseMixing + " For layers, ensure calcium is evenly distributed to prevent shell defects.";
-  } else if (stageKey === 'finisher') {
-    mixingInstructions = baseMixing + " For broiler finisher, mix with a little vegetable oil to reduce dust and increase energy.";
-  } else {
-    // Grower or default
-    mixingInstructions = baseMixing + " Mix all ingredients thoroughly.";
+  if (finalIngredients.length === 0) {
+    warnings.push("⚠️ You seem to have all ingredients already – you may not need to buy anything!");
   }
 
-  // Add designer credit
-  mixingInstructions += " Designed by Mugo to assist farmers globally.";
+  // Mixing instructions
+  let mixingInstructions = "Mix all ingredients thoroughly. For best results, grind maize and soya meal to a fine powder before mixing.";
+  if (stageKey === 'starter') {
+    mixingInstructions += " Starter feed should be crumbled or mashed for young chicks.";
+  } else if (stageKey === 'layer') {
+    mixingInstructions += " For layers, ensure calcium is evenly distributed to prevent shell defects.";
+  } else if (stageKey === 'finisher') {
+    mixingInstructions += " For broiler finisher, mix with a little vegetable oil to reduce dust and increase energy.";
+  }
 
-  // Build initial structured list (will be replaced with table)
+  // Build structured list (voice_script will be added by the API route)
   const structuredList = [
     {
       key: "feed_summary",
@@ -592,11 +623,9 @@ function formulateFeed(params: {
       }
     },
     {
-      key: "ingredient_list", // will be replaced by table in API
+      key: "ingredient_list",
       params: {
-        content: `Ingredients:\n${finalIngredients.map(ing => {
-          return `${ing.name}: ${ing.amountKg.toFixed(2)} kg (${ing.cost.toFixed(2)})`;
-        }).join('\n')}`
+        content: `Ingredients:\n${ingredientLines.join('\n')}`
       }
     },
     {
@@ -636,233 +665,4 @@ function formulateFeed(params: {
     warnings,
     structuredList,
   };
-}
-
-// ========== POST HANDLER ==========
-export async function POST(request: NextRequest) {
-  try {
-    console.log("🐔 Poultry Feed Formulation API called");
-    const body = await request.json();
-    const cookieLanguage = request.cookies.get('preferred-language')?.value;
-    const bodyLanguage = body.language;
-    const userLanguage = bodyLanguage || cookieLanguage || 'en';
-    console.log(`🌐 Generating feed formulation in language: ${userLanguage}`);
-
-    const {
-      breed,
-      stage,
-      quantityKg,
-      includeCoccidiostat,
-      county,
-      subCounty,
-      ward,
-      village,
-      country,
-      userid,
-      farmerName,
-      ingredientPrices,
-    } = body;
-
-    if (!breed || !stage || !quantityKg || !country || !userid) {
-      console.error("Missing required fields:", { breed, stage, quantityKg, country, userid });
-      return NextResponse.json({
-        error: "Missing required fields: breed, stage, quantityKg, country, and userid are required"
-      }, { status: 400 });
-    }
-
-    const normalizedCountry = country.toLowerCase();
-
-    const cacheKey = getCacheKey({
-      breed,
-      stage,
-      quantityKg,
-      includeCoccidiostat,
-      country: normalizedCountry,
-      ingredientPrices
-    });
-
-    let feedResult: any = null;
-    if (cache.has(cacheKey)) {
-      const cached = cache.get(cacheKey);
-      if (Date.now() - cached.timestamp < CACHE_TTL) {
-        console.log("✅ Using cached feed formulation");
-        feedResult = cached.data;
-      } else {
-        cache.delete(cacheKey);
-      }
-    }
-
-    if (!feedResult) {
-      console.log("📋 Calculating fresh feed formulation...");
-      try {
-        feedResult = await withTimeout(
-          (async () => {
-            const result = formulateFeed({
-              breed,
-              stage,
-              quantityKg: parseFloat(quantityKg),
-              includeCoccidiostat: includeCoccidiostat === "Yes" || includeCoccidiostat === true,
-              country: normalizedCountry,
-              ingredientPrices: ingredientPrices || {},
-            });
-            return result;
-          })(),
-          30000,
-          "Feed formulation timed out after 30 seconds"
-        );
-        cache.set(cacheKey, { data: feedResult, timestamp: Date.now() });
-        console.log("✅ Feed formulation completed");
-      } catch (error: any) {
-        console.error("❌ Error formulating feed:", error);
-        throw new Error(`Formulation error: ${error.message}`);
-      }
-    }
-
-    // ========== BUILD INGREDIENT TABLE (no symbols, visible colors) ==========
-    const ingredients = feedResult.ingredients || [];
-    const totalCost = feedResult.totalCost || 0;
-    const nutrition = feedResult.nutritionalSummary || { protein: 0, calcium: 0, energy: 0 };
-
-    const tableRows = ingredients.map((ing: any) => {
-      const qty = ing.amountKg.toFixed(2);
-      const pricePerKg = formatCurrencyForCountry(ing.pricePerKg, normalizedCountry);
-      const total = formatCurrencyForCountry(ing.cost, normalizedCountry);
-      return `<tr>
-        <td>${ing.name}</td>
-        <td>${qty}</td>
-        <td>${pricePerKg}</td>
-        <td>${total}</td>
-      </tr>`;
-    });
-
-    const totalFormatted = formatCurrencyForCountry(totalCost, normalizedCountry);
-
-    const tableHTML = `
-<style>
-.ingredient-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; background: #ffffff; border-radius: 8px; overflow: hidden; }
-.ingredient-table th { background: #2563eb; color: #ffffff; padding: 10px 12px; text-align: left; font-weight: 600; }
-.ingredient-table td { background: #ffffff; color: #1e293b; padding: 8px 12px; border-bottom: 1px solid #e2e8f0; }
-.ingredient-table .total-row { background: #f8fafc; font-weight: bold; }
-.ingredient-table .total-row td { border-top: 2px solid #2563eb; background: #f8fafc; }
-.ingredient-table tr:last-child td { border-bottom: none; }
-.ingredient-table .total-row td:first-child { font-weight: bold; }
-.ingredient-table .total-row td:last-child { font-weight: bold; }
-</style>
-<table class="ingredient-table">
-  <thead>
-    <tr>
-      <th>Ingredient</th>
-      <th>Quantity (kg)</th>
-      <th>Price per kg</th>
-      <th>Total Cost</th>
-    </tr>
-  </thead>
-  <tbody>
-    ${tableRows.join('')}
-    <tr class="total-row">
-      <td><strong>TOTAL</strong></td>
-      <td></td>
-      <td></td>
-      <td><strong>${totalFormatted}</strong></td>
-    </tr>
-  </tbody>
-</table>
-`;
-
-    // ========== BUILD NEW STRUCTURED LIST (no voice_script) ==========
-    const newStructuredList: any[] = [];
-    for (const item of feedResult.structuredList) {
-      if (item.key === 'ingredient_list') {
-        newStructuredList.push({
-          key: 'ingredient_table',
-          params: { content: tableHTML }
-        });
-      } else if (item.key === 'total_cost') {
-        continue;
-      } else {
-        newStructuredList.push(item);
-      }
-    }
-
-    const totalCostItem = {
-      key: "total_cost",
-      params: {
-        content: `Total Cost: ${totalFormatted}`
-      }
-    };
-    const tableIndex = newStructuredList.findIndex(item => item.key === 'ingredient_table');
-    if (tableIndex !== -1) {
-      newStructuredList.splice(tableIndex + 1, 0, totalCostItem);
-    } else {
-      newStructuredList.push(totalCostItem);
-    }
-
-    feedResult.structuredList = newStructuredList;
-
-    // Create session document
-    const sessionRef = db.collection("farmer_sessions").doc();
-    const sessionId = sessionRef.id;
-
-    const farmerSession = {
-      id: sessionId,
-      userId: userid,
-      language: userLanguage,
-      farmerName: farmerName || 'Farmer',
-      breed,
-      stage,
-      quantityKg: parseFloat(quantityKg),
-      includeCoccidiostat: includeCoccidiostat === "Yes" || includeCoccidiostat === true,
-      ingredientPrices: ingredientPrices || {},
-      county: county || '',
-      subCounty: subCounty || '',
-      ward: ward || '',
-      village: village || '',
-      country: normalizedCountry,
-      feedResult: {
-        ingredients: feedResult.ingredients,
-        totalCost: feedResult.totalCost,
-        nutritionalSummary: feedResult.nutritionalSummary,
-        mixingInstructions: feedResult.mixingInstructions,
-        warnings: feedResult.warnings,
-      },
-      structuredList: feedResult.structuredList,
-      metadata: {
-        createdAt: new Date().toISOString(),
-        source: "poultry-feed-formulation",
-        version: "2.4"
-      }
-    };
-
-    await sessionRef.set(farmerSession);
-    console.log(`✅ Saved poultry session ${sessionId} for ${breed} ${stage}`);
-
-    return NextResponse.json({
-      success: true,
-      sessionId: sessionId,
-      structuredList: feedResult.structuredList,
-      feedResult: {
-        ingredients: feedResult.ingredients,
-        totalCost: feedResult.totalCost,
-        nutritionalSummary: feedResult.nutritionalSummary,
-        mixingInstructions: feedResult.mixingInstructions,
-        warnings: feedResult.warnings,
-      },
-      welcomeMessage: `Welcome ${farmerName || "Farmer"}! I've prepared your ${breed} ${stage} feed formula for ${quantityKg} kg.`
-    }, { status: 200 });
-
-  } catch (error: any) {
-    console.error("API Route Error:", error);
-    return NextResponse.json({
-      success: false,
-      error: error.message || "Unknown error occurred"
-    }, { status: 500 });
-  }
-}
-
-export async function GET() {
-  return NextResponse.json({
-    status: "operational",
-    message: "Poultry Feed Formulation API - v2.4 (17 ingredients, table, no voice script, enhanced mixing)",
-    version: "2.4"
-  });
 }

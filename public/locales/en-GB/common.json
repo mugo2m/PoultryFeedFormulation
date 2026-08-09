@@ -940,6 +940,82 @@
   "gross_margin_current_level": "Your current level: {{level}}",
   "gross_margin_bottom_line": "BOTTOM LINE",
   "gross_margin_extra_profit": "Moving from {{from}} to High could put an extra {{amount}} in your pocket",
+
+
+
+
+  "question_breed": "What breed of poultry are you rearing?",
+  "question_stage": "What stage are your birds at?",
+  "question_quantity": "How many kilograms do you want to formulate?",
+  "question_coccidiostat": "Include coccidiostat?",
+  "question_available_ingredients": "Which ingredients do you already have?",
+
+  "breed_local": "Local",
+  "breed_layers": "Layers",
+  "breed_sasso": "Sasso",
+  "breed_kenbrew": "Kenbrew",
+  "breed_kroiler": "Kroiler",
+  "breed_broiler": "Broiler",
+  "breed_sussex": "Sussex",
+
+  "stage_starter": "Starter (0–6 weeks)",
+  "stage_grower": "Grower (6–20 weeks)",
+  "stage_layer": "Layer (20+ weeks)",
+  "stage_finisher": "Finisher (4–8 weeks)",
+
+  "ingredient_broken_maize": "Broken maize",
+  "ingredient_soya_meal": "Soya meal",
+  "ingredient_fish_meal": "Fish meal",
+  "ingredient_sunflower_cake": "Sunflower cake",
+  "ingredient_wheat_bran": "Wheat bran",
+  "ingredient_lime": "Lime",
+  "ingredient_dcp": "DCP",
+  "ingredient_premix": "Premix",
+  "ingredient_methionine": "Methionine",
+  "ingredient_lysine": "Lysine",
+  "ingredient_salt": "Salt",
+  "ingredient_toxin_binder": "Toxin binder",
+
+  "feed_formula_title": "Custom Feed Formula",
+  "ingredient_list": "Ingredients",
+  "nutritional_info": "Nutritional Summary",
+  "total_cost": "Total Cost",
+  "mixing_instructions": "Mixing Instructions",
+  "safety_warnings": "Safety Warnings",
+
+  "feed_business_tip": "Mix accurately to avoid waste and maximize growth.",
+  "feed_disclaimer": "Store feed in a dry, cool place and use within 2 weeks.",
+  "welcome_feed_plan": "Welcome! I've prepared your custom poultry feed plan.",
+  "prepared_feed_recommendations": "I've prepared your custom poultry feed formula.",
+  "feed_summary": "For {{breed}} at {{stage}} stage, {{quantity}} kg.",
+  "post_feed_recommendations": "That's your feed formula. Ask me more about poultry management.",
+"custom_feed_formula": "Custom Feed Formula",
+  "feed_business_tip": "Business Tip: Mix accurately to avoid waste and maximize growth.",
+  "feed_disclaimer": "Store feed in a dry, cool place and use within 2 weeks.",
+  "welcome_feed_plan": "Welcome! I've prepared your customized poultry feed plan based on your birds and stage.",
+  "prepared_feed_recommendations": "I've prepared your custom poultry feed formula.",
+  "feed_summary": "For {{breed}} at {{stage}} stage, {{quantity}} kg.",
+  "post_feed_recommendations": "That's your feed formula. Ask me more about poultry management.",
+  "feed_summary_title": "Feed Summary",
+  "ingredient_list_title": "Ingredients",
+  "nutritional_info_title": "Nutritional Summary",
+  "total_cost_title": "Total Cost",
+  "mixing_instructions_title": "Mixing Instructions",
+  "safety_warnings_title": "Safety Warnings",
+  "hear_recommendations": "Hear Recommendations",
+  "location_info": "Location",
+  "ask_questions": "Ask Questions",
+"question_ingredient_prices": "Enter the price per kg for each ingredient you have.",
+  "confirm_prices": "Confirm Prices",
+  "prices_recorded": "Prices recorded.",
+  "enter_price_placeholder": "Price per kg",
+"ingredient_table_title": "Ingredients & Costs",
+
+
+
+
+
+
   "gap_title": "GOOD AGRICULTURAL PRACTICES FOR YOUR {{crop}} ENTERPRISE",
   "gap_maize": "Seed: Use 10kg certified maize seed per acre. Varieties: H614, H629, PHB 3253\nLand prep: Prepare before rains. Plough twice for fine seedbed\nPlanting: Plant at onset of rains, 75cm x 25cm spacing, 5cm deep\nWeeding: 1st weeding at 2-3 weeks, 2nd at 5-6 weeks\nTopdressing: Apply at knee-high stage when soil is moist\nMaturity: 3-6 months depending on variety\nYield: 25-40 bags per acre with good management\n\n• Always read and follow the manufacturer’s label – it’s the law.\n• Observe pre‑harvest interval: do not harvest within the stated days after last pesticide application.\n• Use the recommended fertilizer rate per acre – over‑application wastes money, under‑application reduces yield.\n• Triple‑rinse empty containers, puncture them, and dispose in designated sites. Never reuse for food or water.\n• Wear gloves, mask, long sleeves, and boots when handling agrochemicals.\n• Calibrate your sprayer before each use to ensure the correct rate per acre.\n• Avoid spraying during windy conditions or when bees are active (early morning or late evening).\n• Store chemicals in original containers, locked away from children, food, and animal feed.\n• Keep a log of all inputs – date, product, rate, area treated – to track performance and meet export requirements.\n• Trace elements like lead, cadmium, and copper can contaminate produce – maintain soil health to avoid market rejection.",
 "gap_beans": "Seed: Use 20-24kg certified bean seed per acre. Varieties: Rosecoco, Canadian Wonder\nSpacing: 50cm x 10cm pure stand, 2 seeds per hole\nPlanting: Plant early in season to avoid bean fly\nWeeding: Keep field clean, avoid weeding during flowering\nMaturity: 3-4 months\nYield: 5-15 bags per acre\n\n• Always read and follow the manufacturer’s label – it’s the law.\n• Observe pre‑harvest interval: do not harvest within the stated days after last pesticide application.\n• Use the recommended fertilizer rate per acre – over‑application wastes money, under‑application reduces yield.\n• Triple‑rinse empty containers, puncture them, and dispose in designated sites. Never reuse for food or water.\n• Wear gloves, mask, long sleeves, and boots when handling agrochemicals.\n• Calibrate your sprayer before each use to ensure the correct rate per acre.\n• Avoid spraying during windy conditions or when bees are active (early morning or late evening).\n• Store chemicals in original containers, locked away from children, food, and animal feed.\n• Keep a log of all inputs – date, product, rate, area treated – to track performance and meet export requirements.\n• Trace elements like lead, cadmium, and copper can contaminate produce – maintain soil health to avoid market rejection.",

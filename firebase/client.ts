@@ -27,14 +27,15 @@ import { getFirestore } from "firebase/firestore";
   //measurementId: "G-JPF2L3H08N"
 //};
 const firebaseConfig = {
-  apiKey: "AIzaSyDymmvqyH4UAyy7GCkqSujO5aZBLM1OdJ0",
-  authDomain: "agriculturehugo.firebaseapp.com",
-  projectId: "agriculturehugo",
-  storageBucket: "agriculturehugo.firebasestorage.app",
-  messagingSenderId: "311517721134",
-  appId: "1:311517721134:web:70c17935a7f6447fc9a5bf",
-  measurementId: "G-8ZBCPYBGXM"
+  apiKey: "AIzaSyCane50tLGLEOrL0Cbjsol_btpZuFb_whE",
+  authDomain: "poultryfeedformulation-fbedb.firebaseapp.com",
+  projectId: "poultryfeedformulation-fbedb",
+  storageBucket: "poultryfeedformulation-fbedb.firebasestorage.app",
+  messagingSenderId: "959526361397",
+  appId: "1:959526361397:web:924d0cd13b2031c808547c",
+  measurementId: "G-7W58XQWQ5Y"
 };
+
 // Initialize Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 

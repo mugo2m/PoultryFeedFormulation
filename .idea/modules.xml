@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/ai_mock_interviews.iml" filepath="$PROJECT_DIR$/.idea/ai_mock_interviews.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/PoultryFeedFormulation.iml" filepath="$PROJECT_DIR$/.idea/PoultryFeedFormulation.iml" />
     </modules>
   </component>
 </project>

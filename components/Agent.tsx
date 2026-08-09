@@ -1,4 +1,3 @@
-// components/Agent.tsx – Android voice fix: only local voices, time‑based karaoke
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -7,7 +6,6 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { useOfflineTranslation } from '@/lib/hooks/useOfflineTranslation';
 import VoiceService from "@/lib/voice/VoiceService";
-import { MPESAPaymentModal } from "@/components/Payment/MPESAPaymentModal";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import {
@@ -18,15 +16,19 @@ import {
   Loader2,
   ArrowLeft,
   MessageCircle,
-  BarChart3,
   Beaker,
   AlertCircle,
   Rocket,
-  VolumeX,
+  Scale,
+  Package,
+  DollarSign,
+  MapPin,
+  Shield,
+  CheckCircle,
+  List,
+  ClipboardList,
 } from "lucide-react";
 import { useCurrency } from '@/lib/context/CurrencyContext';
-
-const LINE_BREAK = '␊';
 
 interface AgentProps {
   userName: string;
@@ -48,27 +50,17 @@ const Agent = ({
 }: AgentProps) => {
   const { t, ready, i18n } = useOfflineTranslation();
   const { currency } = useCurrency();
-  const [currentLang, setCurrentLang] = useState<string>('en');
 
   const getDisplaySymbol = (): string => currency.symbol || 'Ksh';
 
   const getSpokenCurrencyName = (): string => {
+    if (i18n.language === 'es') return 'Euros';
     const lang = i18n.language;
     switch (currency.code) {
-      case 'KES':
-        if (lang === 'fr') return 'Shillings kényans';
-        if (lang === 'sw') return 'Shilingi za Kenya';
-        return 'Kenyan Shillings';
-      case 'UGX':
-        if (lang === 'fr') return 'Shillings ougandais';
-        if (lang === 'sw') return 'Shilingi za Uganda';
-        return 'Ugandan Shillings';
-      case 'TZS':
-        if (lang === 'fr') return 'Shillings tanzaniens';
-        if (lang === 'sw') return 'Shilingi za Tanzania';
-        return 'Tanzanian Shillings';
-      default:
-        return currency.name;
+      case 'KES': return lang === 'fr' ? 'Shillings kényans' : lang === 'sw' ? 'Shilingi za Kenya' : 'Kenyan Shillings';
+      case 'UGX': return lang === 'fr' ? 'Shillings ougandais' : lang === 'sw' ? 'Shilingi za Uganda' : 'Ugandan Shillings';
+      case 'TZS': return lang === 'fr' ? 'Shillings tanzaniens' : lang === 'sw' ? 'Shilingi za Tanzania' : 'Tanzanian Shillings';
+      default: return currency.name;
     }
   };
 
@@ -76,14 +68,118 @@ const Agent = ({
     const sessionLang = sessionData?.language;
     if (sessionLang && sessionLang !== i18n.language) {
       i18n.changeLanguage(sessionLang);
-      setCurrentLang(sessionLang);
       localStorage.setItem('preferred-language', sessionLang);
     }
   }, [sessionData, i18n]);
 
+  // ===== TRANSFORM structuredList: ingredient_table → bullet list, nutritional_info → enhanced =====
   useEffect(() => {
-    if (sessionData?.structuredList) setStructuredList(sessionData.structuredList);
-    if (sessionData?.structuredFinancialAdvice) setStructuredFinancialAdvice(sessionData.structuredFinancialAdvice);
+    if (sessionData?.structuredList) {
+      const transformed = sessionData.structuredList.map((item: any) => {
+        // 1. ingredient_table → bullet list
+        if (item.key === 'ingredient_table') {
+          const ingredients = sessionData?.feedResult?.ingredients || [];
+          const totalCost = sessionData?.feedResult?.totalCost || 0;
+          const displaySymbol = getDisplaySymbol();
+
+          let bulletList = '';
+          ingredients.forEach((ing: any) => {
+            const amount = ing.amountKg.toFixed(2);
+            const cost = displaySymbol + ' ' + ing.cost.toFixed(0);
+            bulletList += `• ${ing.name}: ${amount} kg (${cost})\n`;
+          });
+          bulletList += `\nTotal Cost: ${displaySymbol} ${totalCost.toFixed(0)}`;
+
+          return {
+            ...item,
+            params: { content: bulletList }
+          };
+        }
+
+        // 2. nutritional_info → enhanced with targets
+        if (item.key === 'nutritional_info') {
+          const nutritionData = sessionData?.feedResult?.nutritionalSummary;
+          let actualProtein = nutritionData?.protein || 0;
+          let actualCalcium = nutritionData?.calcium || 0;
+          let actualEnergy = nutritionData?.energy || 0;
+
+          // Fallback: parse from original content if nutritionData missing
+          if (!nutritionData) {
+            const content = item.params?.content || '';
+            const proteinMatch = content.match(/Protein\s*~([\d.]+)/);
+            const calciumMatch = content.match(/Calcium\s*~([\d.]+)/);
+            const energyMatch = content.match(/Energy\s*~([\d.]+)/);
+            actualProtein = proteinMatch ? parseFloat(proteinMatch[1]) : 0;
+            actualCalcium = calciumMatch ? parseFloat(calciumMatch[1]) : 0;
+            actualEnergy = energyMatch ? parseFloat(energyMatch[1]) : 0;
+          }
+
+          // Define targets based on stage
+          const targets: Record<string, { protein: number; calcium: number; energy: number }> = {
+            starter: { protein: 19, calcium: 1.0, energy: 2800 },
+            grower: { protein: 16.5, calcium: 0.9, energy: 2700 },
+            layer: { protein: 16.5, calcium: 3.8, energy: 2750 },
+            finisher: { protein: 20, calcium: 0.7, energy: 2900 }
+          };
+
+          const stageKey = sessionData?.stage?.toLowerCase().includes('starter') ? 'starter' :
+                           sessionData?.stage?.toLowerCase().includes('grower') ? 'grower' :
+                           sessionData?.stage?.toLowerCase().includes('layer') ? 'layer' :
+                           sessionData?.stage?.toLowerCase().includes('finisher') ? 'finisher' : 'starter';
+
+          const target = targets[stageKey as keyof typeof targets] || targets.starter;
+
+          // Check if targets are met (within 5% tolerance)
+          const tolerance = 0.05;
+          const isProteinMet = target.protein > 0 ? Math.abs(actualProtein - target.protein) / target.protein < tolerance : false;
+          const isCalciumMet = target.calcium > 0 ? Math.abs(actualCalcium - target.calcium) / target.calcium < tolerance : false;
+          const isEnergyMet = target.energy > 0 ? Math.abs(actualEnergy - target.energy) / target.energy < tolerance : false;
+          const allMet = isProteinMet && isCalciumMet && isEnergyMet;
+
+          // Build bullet points (with ✅/❌)
+          let bulletLines: string[] = [];
+          bulletLines.push(`- Protein: ${actualProtein}% (Target: ${target.protein}%) ${isProteinMet ? '✅' : '❌'}`);
+          bulletLines.push(`- Calcium: ${actualCalcium}% (Target: ${target.calcium}%) ${isCalciumMet ? '✅' : '❌'}`);
+          bulletLines.push(`- Energy: ${actualEnergy} kcal/kg (Target: ${target.energy} kcal/kg) ${isEnergyMet ? '✅' : '❌'}`);
+
+          let adviceLines: string[] = [];
+          if (!isProteinMet) {
+            const diff = (target.protein - actualProtein).toFixed(1);
+            adviceLines.push(`  - Protein is ${diff}% too low - Add more soya bean meal or fish meal`);
+          }
+          if (!isCalciumMet) {
+            const diff = (target.calcium - actualCalcium).toFixed(1);
+            adviceLines.push(`  - Calcium is ${diff}% too low - Increase lime or dcp`);
+          }
+          if (!isEnergyMet) {
+            const diff = (target.energy - actualEnergy).toFixed(0);
+            adviceLines.push(`  - Energy is ${diff} kcal/kg too low - Add more maize or vegetable oil`);
+          }
+
+          let summaryLine = allMet
+            ? '✅ All nutritional targets met! This feed is properly balanced for your birds.'
+            : '⚠️ Some nutritional targets are not met. Please review the formula:';
+
+          let enhancedContent = bulletLines.join('\n');
+          if (adviceLines.length > 0) {
+            enhancedContent += '\n\n' + summaryLine + '\n' + adviceLines.join('\n');
+          } else {
+            enhancedContent += '\n\n' + summaryLine;
+          }
+
+          return {
+            ...item,
+            params: { content: enhancedContent }
+          };
+        }
+
+        return item;
+      });
+      setStructuredList(transformed);
+    }
+    if (sessionData?.structuredFinancialAdvice) {
+      setStructuredFinancialAdvice(sessionData.structuredFinancialAdvice);
+    }
   }, [sessionData]);
 
   const safeT = (key: string, params?: any): string => {
@@ -92,8 +188,8 @@ const Agent = ({
       const template = i18n.t(key);
       if (!params) return template;
       let result = template;
-      for (const [k, v] of Object.entries(params)) {
-        result = result.replace(new RegExp(`{{${k}}}`, 'g'), String(v));
+      for (const [paramKey, paramValue] of Object.entries(params)) {
+        result = result.replace(new RegExp(`{{${paramKey}}}`, 'g'), String(paramValue));
       }
       return result;
     } catch { return key; }
@@ -101,11 +197,8 @@ const Agent = ({
 
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [voiceInitializing, setVoiceInitializing] = useState(false);
-  const [hasPaid, setHasPaid] = useState(true); // For demo; adjust as needed
-  const [paymentChecked, setPaymentChecked] = useState(true);
-  const [paymentUsed, setPaymentUsed] = useState(false);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [welcomeSpoken, setWelcomeSpoken] = useState(false);
   const [recommendationsSpoken, setRecommendationsSpoken] = useState(false);
   const [structuredList, setStructuredList] = useState<any[]>([]);
@@ -114,83 +207,66 @@ const Agent = ({
   const [readRecommendations, setReadRecommendations] = useState<Set<number>>(new Set());
   const [recommendationStreams, setRecommendationStreams] = useState<{[key: number]: string}>({});
   const [activeStreamingRec, setActiveStreamingRec] = useState<number | null>(null);
+
+  // Farmers Comments State
+  const [farmerComment, setFarmerComment] = useState<string>("");
+  const [isCommentSubmitting, setIsCommentSubmitting] = useState<boolean>(false);
+  const [commentSubmitted, setCommentSubmitted] = useState<boolean>(false);
+
   const nameUsageCountRef = useRef(0);
   const voiceServiceRef = useRef<VoiceService | null>(null);
   const mountedRef = useRef(true);
   const voiceServiceInitializedRef = useRef(false);
-  const abortStreamingRef = useRef<boolean>(false);
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
-  const [isSpeaking, setIsSpeaking] = useState(false);
+  const abortAnimationRef = useRef<number | null>(null);
 
-  const soilTest = sessionData?.soilTest;
-  const hasSoilTest = soilTest && soilTest.testDate;
-  const interventions = soilTest?.interventions || [];
-  const fertilizerPlan = soilTest?.fertilizerPlan;
+  // Poultry feed specific data from session
   const farmerName = sessionData?.farmerName || userName || "Farmer";
   const farmerCountry = sessionData?.country || 'kenya';
-  const cropName = sessionData?.crops?.[0] || '';
+  const breed = sessionData?.breed || '';
+  const stage = sessionData?.stage || '';
+  const quantityKg = sessionData?.quantityKg || 0;
+  const county = sessionData?.county || '';
+  const subCounty = sessionData?.subCounty || '';
+  const ward = sessionData?.ward || '';
+  const village = sessionData?.village || '';
 
-  const getGapKeyFromCrop = (crop: string): string => {
-    if (!crop) return 'gap_generic';
-    const cropLower = crop.toLowerCase().trim();
-    const cropKeyMap: Record<string, string> = {
-      'banana': 'gap_bananas', 'bananas': 'gap_bananas', 'maize': 'gap_maize', 'beans': 'gap_beans',
-      'finger millet': 'gap_finger_millet', 'sorghum': 'gap_sorghum', 'onions': 'gap_onions',
-      'avocados': 'gap_avocados', 'avocado': 'gap_avocados', 'rice': 'gap_rice', 'mangoes': 'gap_mangoes',
-      'mango': 'gap_mangoes', 'pineapples': 'gap_pineapples', 'watermelons': 'gap_watermelons',
-      'carrots': 'gap_carrots', 'chillies': 'gap_chillies', 'spinach': 'gap_spinach', 'pigeonpeas': 'gap_pigeonpeas',
-      'bambaranuts': 'gap_bambaranuts', 'yams': 'gap_yams', 'taro': 'gap_taro', 'okra': 'gap_okra',
-      'tea': 'gap_tea', 'macadamia': 'gap_macadamia', 'cocoa': 'gap_cocoa', 'soya beans': 'gap_soya_beans',
-      'cowpeas': 'gap_cowpeas', 'green grams': 'gap_green_grams', 'groundnuts': 'gap_groundnuts',
-      'sunflower': 'gap_sunflower', 'simsim': 'gap_simsim', 'coffee': 'gap_coffee', 'cotton': 'gap_cotton',
-      'sugarcane': 'gap_sugarcane', 'tobacco': 'gap_tobacco', 'cassava': 'gap_cassava',
-      'sweet potatoes': 'gap_sweet_potatoes', 'irish potatoes': 'gap_irish_potatoes', 'tomatoes': 'gap_tomatoes',
-      'kales': 'gap_kales', 'cabbages': 'gap_cabbages', 'capsicums': 'gap_capsicums', 'brinjals': 'gap_brinjals',
-      'french beans': 'gap_french_beans', 'garden peas': 'gap_garden_peas', 'oranges': 'gap_oranges',
-      'pawpaws': 'gap_pawpaws', 'passion fruit': 'gap_passion_fruit', 'lemons': 'gap_lemons', 'limes': 'gap_limes',
-      'grapefruit': 'gap_grapefruit', 'guava': 'gap_guava', 'jackfruit': 'gap_jackfruit', 'breadfruit': 'gap_breadfruit',
-      'pomegranate': 'gap_pomegranate', 'star fruit': 'gap_star_fruit', 'coconut': 'gap_coconut', 'cashew': 'gap_cashew',
-      'fig': 'gap_fig', 'date palm': 'gap_date_palm', 'mulberry': 'gap_mulberry', 'lychee': 'gap_lychee',
-      'persimmon': 'gap_persimmon', 'gooseberry': 'gap_gooseberry', 'currant': 'gap_currant', 'elderberry': 'gap_elderberry',
-      'rambutan': 'gap_rambutan', 'durian': 'gap_durian', 'mangosteen': 'gap_mangosteen', 'longan': 'gap_longan',
-      'marula': 'gap_marula', 'vanilla': 'gap_vanilla', 'cardamom': 'gap_cardamom', 'cinnamon': 'gap_cinnamon',
-      'cloves': 'gap_cloves', 'black pepper': 'gap_black_pepper', 'lemon grass': 'gap_lemon_grass',
-      'rosemary': 'gap_rosemary', 'thyme': 'gap_thyme', 'parsley': 'gap_parsley', 'coriander': 'gap_coriander',
-      'cauliflower': 'gap_cauliflower', 'broccoli': 'gap_broccoli', 'leeks': 'gap_leeks', 'celery': 'gap_celery',
-      'lettuce': 'gap_lettuce', 'radish': 'gap_radish', 'beetroot': 'gap_beetroot', 'sisal': 'gap_sisal',
-      'bamboo': 'gap_bamboo', 'napier grass': 'gap_napier_grass', 'rhodes grass': 'gap_rhodes_grass',
-      'lucerne': 'gap_lucerne', 'aloe vera': 'gap_aloe_vera', 'hibiscus': 'gap_hibiscus', 'brachiaria': 'gap_brachiaria',
-      'guinea grass': 'gap_guinea_grass', 'buffel grass': 'gap_buffel_grass', 'napier hybrid': 'gap_napier_hybrid',
-      'oats': 'gap_oats', 'italian ryegrass': 'gap_italian_ryegrass', 'timothy grass': 'gap_timothy_grass',
-      'orchard grass': 'gap_orchard_grass', 'white clover': 'gap_white_clover', 'forage sorghum': 'gap_forage_sorghum',
-      'alfalfa': 'gap_alfalfa', 'almond': 'gap_almond', 'artichoke': 'gap_artichoke', 'arugula': 'gap_arugula',
-      'asparagus': 'gap_asparagus', 'barley': 'gap_barley', 'basil': 'gap_basil', 'birds eye chili': 'gap_birds_eye_chili',
-      'brazil nut': 'gap_brazil_nut', 'buckwheat': 'gap_buckwheat', 'cayenne': 'gap_cayenne', 'chamomile': 'gap_chamomile',
-      'chestnut': 'gap_chestnut', 'chickpea': 'gap_chickpea', 'clover': 'gap_clover', 'dill': 'gap_dill',
-      'echinacea': 'gap_echinacea', 'endive': 'gap_endive', 'escarole': 'gap_escarole', 'faba bean': 'gap_faba_bean',
-      'fennel': 'gap_fennel', 'fenugreek': 'gap_fenugreek', 'flax': 'gap_flax', 'fonio': 'gap_fonio',
-      'frisee': 'gap_frisee', 'ginseng': 'gap_ginseng', 'goldenseal': 'gap_goldenseal', 'hazelnut': 'gap_hazelnut',
-      'hemp': 'gap_hemp', 'hops': 'gap_hops', 'horseradish': 'gap_horseradish', 'jalapeno': 'gap_jalapeno',
-      'jute': 'gap_jute', 'kenaf': 'gap_kenaf', 'kohlrabi': 'gap_kohlrabi', 'lavender': 'gap_lavender',
-      'lentil': 'gap_lentil', 'mint': 'gap_mint', 'mushroom': 'gap_mushroom', 'mustard': 'gap_mustard',
-      'oil palm': 'gap_oil_palm', 'oregano': 'gap_oregano', 'parsnip': 'gap_parsnip', 'peanut': 'gap_peanut',
-      'pecan': 'gap_pecan', 'pistachio': 'gap_pistachio', 'potatoes': 'gap_potatoes', 'pumpkin': 'gap_pumpkin',
-      'quinoa': 'gap_quinoa', 'rapeseed': 'gap_rapeseed', 'rhubarb': 'gap_rhubarb', 'rubber': 'gap_rubber',
-      'rutabaga': 'gap_rutabaga', 'safflower': 'gap_safflower', 'sage': 'gap_sage', 'sesame': 'gap_sesame',
-      'shea': 'gap_shea', 'spelt': 'gap_spelt', 'stinging nettle': 'gap_stinging_nettle', 'swiss chard': 'gap_swiss_chard',
-      'tarragon': 'gap_tarragon', 'teff': 'gap_teff', 'triticale': 'gap_triticale', 'turnip': 'gap_turnip',
-      'turnip greens': 'gap_turnip_greens', 'valerian': 'gap_valerian', 'vetch': 'gap_vetch', 'walnut': 'gap_walnut',
-      'wasabi': 'gap_wasabi', 'watercress': 'gap_watercress', 'wheat': 'gap_wheat', 'shallots': 'gap_shallots',
-      'chives': 'gap_chives', 'garlic': 'gap_garlic', 'african nightshade': 'gap_african_nightshade',
-      'amaranth': 'gap_amaranth', 'spider plant': 'gap_spider_plant', 'pumpkin leaves': 'gap_pumpkin_leaves',
-      'jute mallow': 'gap_jute_mallow', 'ethiopian kale': 'gap_ethiopian_kale', 'slender leaf': 'gap_slender_leaf',
-      'oyster nut': 'gap_oyster_nut', 'mucuna': 'gap_mucuna', 'desmodium': 'gap_desmodium', 'dolichos': 'gap_dolichos',
-      'canavalia': 'gap_canavalia', 'sunn hemp': 'gap_sunn_hemp', 'crotalaria paulina': 'gap_crotalaria_paulina',
-      'moringa': 'gap_moringa', 'ginger': 'gap_ginger', 'turmeric': 'gap_turmeric',
-    };
-    return cropKeyMap[cropLower] || 'gap_generic';
+  // Submit Farmers Comment
+  const submitFarmerComment = async () => {
+    if (!farmerComment.trim() || !sessionData) return;
+    setIsCommentSubmitting(true);
+    setCommentSubmitted(false);
+
+    try {
+      const res = await fetch('/api/farmer/farmerscomments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          comment: farmerComment,
+          farmerName: sessionData.farmerName || userName || "Farmer",
+          userId: userId,
+          sessionId: sessionData.id || interviewId,
+          crop: sessionData.breed || 'poultry',
+          country: sessionData.country || 'kenya'
+        })
+      });
+
+      if (res.ok) {
+        setCommentSubmitted(true);
+        setFarmerComment('');
+        toast.success(safeT('feedback_saved', 'Comment saved successfully!'));
+      } else {
+        toast.error(safeT('feedback_failed', 'Failed to save comment. Please try again.'));
+      }
+    } catch (error: any) {
+      console.error("Error submitting farmer comment:", error);
+      toast.error(safeT('feedback_failed', 'Failed to save comment. Please try again.'));
+    } finally {
+      setIsCommentSubmitting(false);
+    }
   };
 
+  // Voice setup
   const recognitionLanguage = (() => {
     const lang = i18n.language || 'en';
     if (lang === 'en-GB') return 'en-GB';
@@ -201,41 +277,88 @@ const Agent = ({
     return 'en-US';
   })();
 
-  // ========== VOICE CANDIDATES: ONLY LOCAL / OFFLINE VOICES ==========
-  const getLocalVoiceCandidates = (): SpeechSynthesisVoice[] => {
+  const getBestVoice = () => {
     const voices = window.speechSynthesis.getVoices();
-    if (!voices.length) return [];
 
-    const isLocal = (v: SpeechSynthesisVoice) => {
-      const name = v.name.toLowerCase();
-      return !name.includes('online') && !name.includes('natural') && !name.includes('google') && !name.includes('cloud') && !name.includes('remote');
-    };
-
-    // Filter only local voices
-    const localVoices = voices.filter(isLocal);
-    if (localVoices.length === 0) return [];
-
-    // Prioritise by language: exact match, then en-GB, en-US, any English, then any
-    const exact = localVoices.filter(v => v.lang === recognitionLanguage);
-    const enGB = localVoices.filter(v => v.lang === 'en-GB');
-    const enUS = localVoices.filter(v => v.lang === 'en-US');
-    const anyEn = localVoices.filter(v => v.lang.startsWith('en'));
-    const any = [...localVoices];
-
-    const candidates: SpeechSynthesisVoice[] = [];
-    const addUnique = (list: SpeechSynthesisVoice[]) => {
-      for (const v of list) {
-        if (!candidates.some(ex => ex.name === v.name && ex.lang === v.lang)) {
-          candidates.push(v);
-        }
+    const findBritishEnglishFemale = (): SpeechSynthesisVoice | null => {
+      const femaleNames = ['libby', 'hazel', 'susan', 'maisie', 'sonia', 'kate', 'victoria', 'millie', 'olivia', 'google uk english female', 'microsoft libby', 'microsoft hazel', 'microsoft susan', 'microsoft maisie', 'microsoft sonia', 'british english female', 'uk english female'];
+      for (const name of femaleNames) {
+        const voice = voices.find(v => v.lang === 'en-GB' && v.name.toLowerCase().includes(name));
+        if (voice) return voice;
       }
+      const maleIndicators = ['george', 'ryan', 'thomas', 'david', 'mark', 'james', 'john', 'paul', 'michael'];
+      const anyBritishFemale = voices.find(v => v.lang === 'en-GB' && !maleIndicators.some(m => v.name.toLowerCase().includes(m)));
+      if (anyBritishFemale) return anyBritishFemale;
+      return voices.find(v => v.lang === 'en-GB') || null;
     };
-    addUnique(exact);
-    addUnique(enGB);
-    addUnique(enUS);
-    addUnique(anyEn);
-    addUnique(any);
-    return candidates;
+
+    const findAmericanEnglishFemale = (): SpeechSynthesisVoice | null => {
+      const femaleNames = ['samantha', 'victoria', 'zira', 'jenny', 'aria', 'google us english female', 'microsoft jenny', 'microsoft zira', 'microsoft aria', 'us english female'];
+      for (const name of femaleNames) {
+        const voice = voices.find(v => v.lang === 'en-US' && v.name.toLowerCase().includes(name));
+        if (voice) return voice;
+      }
+      const maleIndicators = ['david', 'mark', 'james', 'john', 'paul', 'michael', 'alex', 'thomas'];
+      const anyFemale = voices.find(v => v.lang === 'en-US' && !maleIndicators.some(m => v.name.toLowerCase().includes(m)));
+      if (anyFemale) return anyFemale;
+      return voices.find(v => v.lang === 'en-US') || null;
+    };
+
+    const findFrenchVoice = (): SpeechSynthesisVoice | null => {
+      let vivienne = voices.find(v => v.lang.startsWith('fr') && v.name.toLowerCase().includes('vivienne'));
+      if (vivienne) return vivienne;
+      const frenchFemale = voices.find(v => v.lang.startsWith('fr') && (v.name.toLowerCase().includes('denise') || v.name.toLowerCase().includes('google français female') || v.name.toLowerCase().includes('marie') || v.name.toLowerCase().includes('chloe')));
+      if (frenchFemale) return frenchFemale;
+      return voices.find(v => v.lang.startsWith('fr')) || null;
+    };
+
+    const findSpanishVoice = (): SpeechSynthesisVoice | null => {
+      const femaleNames = ['elena', 'ximena', 'maria', 'paloma', 'sofia', 'catalina', 'salome', 'belkys', 'ramona', 'andrea', 'lorena', 'teresa', 'marta', 'karla', 'dalia', 'yolanda', 'margarita', 'tania', 'camila', 'karina', 'elvira', 'valentina', 'paola', 'michelle', 'gabriela', 'lucia', 'laura', 'fernanda', 'victoria', 'monica', 'paulina', 'sabina', 'helena', 'florencia'];
+      for (const name of femaleNames) {
+        const voice = voices.find(v => v.lang.startsWith('es') && v.name.toLowerCase().includes(name));
+        if (voice) return voice;
+      }
+      const nonMale = voices.find(v => v.lang.startsWith('es') && !v.name.toLowerCase().includes('alvaro') && !v.name.toLowerCase().includes('jorge') && !v.name.toLowerCase().includes('manuel') && !v.name.toLowerCase().includes('andres') && !v.name.toLowerCase().includes('carlos') && !v.name.toLowerCase().includes('juan') && !v.name.toLowerCase().includes('luis') && !v.name.toLowerCase().includes('rodrigo') && !v.name.toLowerCase().includes('javier'));
+      if (nonMale) return nonMale;
+      return null;
+    };
+
+    const findSwahiliVoice = (): SpeechSynthesisVoice | null => {
+      let swahiliVoices = voices.filter(v => v.lang === 'sw-KE' && (v.name.includes('Rafiki') || v.name.includes('Zuri') || v.name.includes('Aisha') || v.name.includes('Kenya')));
+      if (swahiliVoices.length > 0) return swahiliVoices[0];
+      swahiliVoices = voices.filter(v => v.lang === 'sw-KE');
+      if (swahiliVoices.length > 0) return swahiliVoices[0];
+      return null;
+    };
+
+    if (recognitionLanguage === 'en-GB') {
+      const britishVoice = findBritishEnglishFemale();
+      if (britishVoice) return { voice: britishVoice, language: 'en-GB' };
+      const anyNonMale = voices.find(v => v.lang.startsWith('en') && !v.name.toLowerCase().includes('male'));
+      if (anyNonMale) return { voice: anyNonMale, language: 'en-GB' };
+    }
+    if (recognitionLanguage === 'en-US') {
+      const usVoice = findAmericanEnglishFemale();
+      if (usVoice) return { voice: usVoice, language: 'en-US' };
+      const anyNonMale = voices.find(v => v.lang.startsWith('en') && !v.name.toLowerCase().includes('male'));
+      if (anyNonMale) return { voice: anyNonMale, language: 'en-US' };
+    }
+    if (recognitionLanguage === 'fr-FR' || recognitionLanguage === 'fr-CA' || recognitionLanguage.startsWith('fr')) {
+      const frenchVoice = findFrenchVoice();
+      if (frenchVoice) return { voice: frenchVoice, language: 'fr-FR' };
+    }
+    if (recognitionLanguage === 'es-ES' || recognitionLanguage.startsWith('es')) {
+      const spanishVoice = findSpanishVoice();
+      if (spanishVoice) return { voice: spanishVoice, language: 'es-ES' };
+    }
+    if (recognitionLanguage === 'sw-KE' || recognitionLanguage === 'sw-TZ' || recognitionLanguage.startsWith('sw')) {
+      const swahiliVoice = findSwahiliVoice();
+      if (swahiliVoice) return { voice: swahiliVoice, language: 'sw-KE' };
+    }
+    const anyEnglish = voices.find(v => v.lang.startsWith('en') && !v.name.toLowerCase().includes('male'));
+    if (anyEnglish) return { voice: anyEnglish, language: 'en-GB' };
+    if (voices.length > 0) return { voice: voices[0], language: 'en-GB' };
+    return { voice: null, language: 'en-GB' };
   };
 
   const waitForVoices = (maxAttempts = 10): Promise<void> => {
@@ -264,11 +387,6 @@ const Agent = ({
       }
     }
   }, []);
-
-  useEffect(() => {
-    setHasPaid(true);
-    setPaymentChecked(true);
-  }, [interviewId, userId]);
 
   useEffect(() => {
     if (!mountedRef.current) return;
@@ -314,7 +432,7 @@ const Agent = ({
   if (!ready) {
     return (
       <div className="flex justify-center items-center min-h-[400px]">
-        <LoadingSpinner fullScreen={false} message="Loading your farm advisor..." />
+        <LoadingSpinner fullScreen={false} message="Loading your feed advisor..." />
       </div>
     );
   }
@@ -359,39 +477,37 @@ const Agent = ({
     return speechText;
   };
 
-  // ========== KARAOKE STREAMING WITH LOCAL VOICES ONLY ==========
+  // ========== STREAMING KARAOKE ==========
   const streamRecommendationKaraoke = async (rawRecommendation: string, index: number) => {
     if (!voiceEnabled || !window.speechSynthesis) return;
 
     if (window.speechSynthesis.speaking) {
       window.speechSynthesis.cancel();
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(r => setTimeout(r, 200));
     }
 
-    abortStreamingRef.current = false;
     setActiveStreamingRec(index);
     setRecommendationStreams(prev => ({ ...prev, [index]: "" }));
 
-    const speechText = prepareForSpeech(rawRecommendation);
     const fullRawText = rawRecommendation;
-    const estimatedDuration = Math.max(1000, speechText.length * 70);
-
-    // Time-based animation (always runs)
-    let animationId: number | null = null;
+    const speechText = prepareForSpeech(rawRecommendation);
+    const totalChars = speechText.length;
+    const totalDuration = Math.max(3000, totalChars * 80);
     let startTime = 0;
+    let animationId: number | null = null;
+
     const updateProgress = (progress: number) => {
-      if (abortStreamingRef.current) return;
       const charIndex = Math.floor(progress * fullRawText.length);
       setRecommendationStreams(prev => ({ ...prev, [index]: fullRawText.substring(0, charIndex) }));
     };
+
     const startAnimation = () => {
       if (animationId) cancelAnimationFrame(animationId);
       startTime = 0;
       const animate = (timestamp: number) => {
-        if (abortStreamingRef.current) return;
         if (!startTime) startTime = timestamp;
         const elapsed = timestamp - startTime;
-        const progress = Math.min(1, elapsed / estimatedDuration);
+        const progress = Math.min(1, elapsed / totalDuration);
         updateProgress(progress);
         if (progress < 1) {
           animationId = requestAnimationFrame(animate);
@@ -402,124 +518,55 @@ const Agent = ({
       };
       animationId = requestAnimationFrame(animate);
     };
+
     startAnimation();
 
-    // Voice candidates – only local voices
-    const candidates = getLocalVoiceCandidates();
-    if (candidates.length === 0) {
-      // No local voices – rely on animation only; mark as read when animation ends
-      setTimeout(() => {
-        if (activeStreamingRec === index && !readRecommendations.has(index)) {
-          setRecommendationStreams(prev => ({ ...prev, [index]: fullRawText }));
-          setReadRecommendations(prev => new Set(prev).add(index));
-          setActiveStreamingRec(null);
-        }
-      }, estimatedDuration + 500);
-      return;
-    }
+    const utterance = new SpeechSynthesisUtterance(speechText);
+    const { voice, language } = getBestVoice();
+    if (voice) utterance.voice = voice;
+    utterance.lang = language;
+    utterance.rate = 0.9;
+    utterance.pitch = 1.1;
+    utterance.volume = 1.0;
 
-    let voiceIdx = 0;
-    const trySpeak = () => {
-      if (voiceIdx >= candidates.length) {
-        // All local voices failed – rely on animation
-        setTimeout(() => {
-          if (activeStreamingRec === index && !readRecommendations.has(index)) {
-            setRecommendationStreams(prev => ({ ...prev, [index]: fullRawText }));
-            setReadRecommendations(prev => new Set(prev).add(index));
-            setActiveStreamingRec(null);
-          }
-        }, estimatedDuration + 500);
-        return;
-      }
-
-      const utterance = new SpeechSynthesisUtterance(speechText);
-      const voice = candidates[voiceIdx];
-      utterance.voice = voice;
-      utterance.lang = voice.lang;
-      utterance.rate = 0.9;
-      utterance.pitch = 1.1;
-      utterance.volume = 1.0;
-
+    await new Promise<void>((resolve) => {
       utterance.onend = () => {
         if (animationId) cancelAnimationFrame(animationId);
         setRecommendationStreams(prev => ({ ...prev, [index]: fullRawText }));
         setReadRecommendations(prev => new Set(prev).add(index));
         setActiveStreamingRec(null);
-        currentUtteranceRef.current = null;
+        resolve();
       };
-
       utterance.onerror = (err) => {
-        console.warn(`Local voice ${voice.name} (${voice.lang}) failed, trying next`);
-        voiceIdx++;
-        trySpeak();
-      };
-
-      currentUtteranceRef.current = utterance;
-      window.speechSynthesis.speak(utterance);
-    };
-    trySpeak();
-
-    // Safety timeout
-    setTimeout(() => {
-      if (activeStreamingRec === index && !readRecommendations.has(index)) {
+        console.error("Speech error:", err);
         if (animationId) cancelAnimationFrame(animationId);
         setRecommendationStreams(prev => ({ ...prev, [index]: fullRawText }));
         setReadRecommendations(prev => new Set(prev).add(index));
         setActiveStreamingRec(null);
-      }
-    }, estimatedDuration + 2000);
-  };
-
-  const speakWithVoice = async (text: string): Promise<void> => {
-    return new Promise(async (resolve) => {
-      if (!window.speechSynthesis) {
         resolve();
-        return;
-      }
-
-      if (!voicesLoaded) {
-        await waitForVoices();
-      }
-
-      if (window.speechSynthesis.speaking) {
-        window.speechSynthesis.cancel();
-      }
-
-      setTimeout(() => {
-        const speechText = prepareForSpeech(text);
-        const candidates = getLocalVoiceCandidates();
-        if (candidates.length === 0) {
-          resolve();
-          return;
-        }
-        let idx = 0;
-        const trySpeak = () => {
-          if (idx >= candidates.length) {
-            resolve();
-            return;
-          }
-          const utterance = new SpeechSynthesisUtterance(speechText);
-          const voice = candidates[idx];
-          utterance.voice = voice;
-          utterance.lang = voice.lang;
-          utterance.rate = 0.9;
-          utterance.pitch = 1.1;
-          utterance.volume = 1.0;
-
-          utterance.onend = () => resolve();
-          utterance.onerror = () => {
-            idx++;
-            trySpeak();
-          };
-          window.speechSynthesis.speak(utterance);
-        };
-        trySpeak();
-
-        setTimeout(() => resolve(), Math.max(text.length * 20, 3000));
-      }, 100);
+      };
+      window.speechSynthesis.speak(utterance);
+      currentUtteranceRef.current = utterance;
     });
   };
 
+  const speakWithVoice = async (text: string): Promise<void> => {
+    if (!window.speechSynthesis) return;
+    if (!voicesLoaded) await waitForVoices();
+    const speechText = prepareForSpeech(text);
+    const utterance = new SpeechSynthesisUtterance(speechText);
+    const { voice, language } = getBestVoice();
+    if (voice) utterance.voice = voice;
+    utterance.lang = language;
+    utterance.rate = 0.9;
+    return new Promise((resolve) => {
+      utterance.onend = () => resolve();
+      utterance.onerror = () => resolve();
+      window.speechSynthesis.speak(utterance);
+    });
+  };
+
+  // ========== STREAM ALL RECOMMENDATIONS WITH VOICE SCRIPT SUPPORT ==========
   const streamAllRecommendations = async () => {
     if (structuredList.length === 0 || recommendationsSpoken) return;
 
@@ -528,60 +575,60 @@ const Agent = ({
 
     const currencyName = getSpokenCurrencyName();
 
-    let introMessage = safeT('prepared_recommendations', 'I\'ve prepared personalized recommendations for your farm enterprise. ');
-    if (hasSoilTest && fertilizerPlan?.totalCost) {
-      introMessage += safeT('soil_test_recommendations', {
-        amount: fertilizerPlan.totalCost.toLocaleString(),
-        currencyName
-      }) + ' ';
-    } else if (hasSoilTest) {
-      introMessage += safeT('soil_test_calculated', 'Based on your soil test, I\'ve calculated precision fertilizer recommendations. ');
-    }
+    // Check for voice_script first
+    const voiceScriptItem = structuredList.find((item: any) => item.key === 'voice_script');
 
-    await speakWithVoice(introMessage);
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    if (voiceScriptItem && voiceScriptItem.params?.content) {
+      const voiceScript = voiceScriptItem.params.content;
+      await speakWithVoice(voiceScript);
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
-    for (let i = 0; i < structuredList.length; i++) {
-      let content = '';
-      const item = structuredList[i];
-      if (item.params?.content) {
-        content = item.params.content;
-      } else if (item.key === 'gap_grouped') {
-        const parts = [];
-        if (item.params?.title) parts.push(item.params.title);
-        let gapKey = item.params?.gapKey;
-        if (!gapKey && cropName) {
-          gapKey = getGapKeyFromCrop(cropName);
+      const voiceIndex = structuredList.indexOf(voiceScriptItem);
+      setReadRecommendations(prev => new Set(prev).add(voiceIndex));
+
+      for (let i = 0; i < structuredList.length; i++) {
+        const item = structuredList[i];
+        if (item.key === 'voice_script') continue;
+
+        let content = '';
+        if (item.params?.content) {
+          content = item.params.content;
+        } else {
+          content = safeT(item.key, item.params);
         }
-        if (gapKey) parts.push(safeT(gapKey, {}));
-        if (item.params?.remember) parts.push(item.params.remember);
-        content = parts.join(LINE_BREAK);
-      } else if (item.key === 'damage_report_grouped') {
-        const parts = [];
-        if (item.params?.title) parts.push(item.params.title);
-        if (item.params?.message) parts.push(item.params.message);
-        if (item.params?.advice) parts.push(item.params.advice);
-        if (item.params?.followUp) parts.push(item.params.followUp);
-        content = parts.join(LINE_BREAK);
-      } else if (item.key === 'crop_benefits_grouped') {
-        const p = item.params;
-        const parts = [];
-        if (p.title) parts.push(p.title);
-        if (p.subtitle) parts.push(p.subtitle);
-        if (p.nutrientsHeader) parts.push(p.nutrientsHeader);
-        if (p.nutrientsList) parts.push(p.nutrientsList);
-        if (p.healthHeader) parts.push(p.healthHeader);
-        if (p.healthList) parts.push(p.healthList);
-        content = parts.join(LINE_BREAK);
-      } else {
-        content = safeT(item.key, item.params);
+        if (!content || content.trim() === '') continue;
+
+        if (item.key === 'ingredient_list') continue;
+
+        await streamRecommendationKaraoke(content, i);
+        await new Promise(resolve => setTimeout(resolve, 800));
       }
-      if (!content || content.trim() === '') {
-        console.log(`⚠️ Skipping empty recommendation at index ${i}`);
-        continue;
+    } else {
+      let introMessage = safeT('prepared_feed_recommendations', 'I\'ve prepared your custom poultry feed formula. ');
+      if (breed && stage && quantityKg) {
+        introMessage += safeT('feed_summary', {
+          breed: breed,
+          stage: stage,
+          quantity: quantityKg,
+          currencyName
+        }) + ' ';
       }
-      await streamRecommendationKaraoke(content, i);
-      await new Promise(resolve => setTimeout(resolve, 500));
+
+      await speakWithVoice(introMessage);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      for (let i = 0; i < structuredList.length; i++) {
+        let content = '';
+        const item = structuredList[i];
+        if (item.params?.content) {
+          content = item.params.content;
+        } else {
+          content = safeT(item.key, item.params);
+        }
+        if (!content || content.trim() === '') continue;
+        await streamRecommendationKaraoke(content, i);
+        await new Promise(resolve => setTimeout(resolve, 800));
+      }
     }
 
     if (structuredFinancialAdvice) {
@@ -590,47 +637,40 @@ const Agent = ({
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
-    await speakWithVoice(safeT('post_recommendations'));
+    await speakWithVoice(safeT('post_feed_recommendations', 'That\'s your feed formula. Ask me more about poultry management.'));
   };
 
+  // ===== START VOICE INTERVIEW =====
   const startVoiceInterview = async () => {
-    if (!voiceEnabled) {
-      toast.error("Please turn voice ON first by clicking the 'Voice ON' button");
-      return;
-    }
-
-    if (interviewId && userId) {
-      if (paymentUsed) {
-        toast.info(safeT('payment_used_new'));
-        setShowPaymentModal(true);
-        return;
-      }
-      if (!hasPaid) {
-        toast.info(safeT('payment_required_to_start'));
-        setShowPaymentModal(true);
-        return;
-      }
-    }
-
-    if (!voiceServiceRef.current) {
-      const initToast = toast.loading(safeT('initializing_voice'));
-      setVoiceInitializing(true);
-      let attempts = 0;
-      while (!voiceServiceRef.current && attempts < 15) {
-        await new Promise(resolve => setTimeout(resolve, 300));
-        attempts++;
-      }
-      toast.dismiss(initToast);
-      setVoiceInitializing(false);
-      if (!voiceServiceRef.current) {
-        toast.error(safeT('voice_service_failed'));
-        return;
-      }
-    }
-
-    setIsLoading(true);
+    if (isProcessing) return;
+    setIsProcessing(true);
 
     try {
+      if (!voiceEnabled) {
+        toast.error("Please turn voice ON first by clicking the 'Voice ON' button");
+        setIsProcessing(false);
+        return;
+      }
+
+      if (!voiceServiceRef.current) {
+        const initToast = toast.loading(safeT('initializing_voice'));
+        setVoiceInitializing(true);
+        let attempts = 0;
+        while (!voiceServiceRef.current && attempts < 15) {
+          await new Promise(resolve => setTimeout(resolve, 300));
+          attempts++;
+        }
+        toast.dismiss(initToast);
+        setVoiceInitializing(false);
+        if (!voiceServiceRef.current) {
+          toast.error(safeT('voice_service_failed'));
+          setIsProcessing(false);
+          return;
+        }
+      }
+
+      setIsLoading(true);
+
       if (sessionData && voiceServiceRef.current && typeof voiceServiceRef.current.startFarmerSession === 'function') {
         await voiceServiceRef.current.startFarmerSession(sessionData);
       }
@@ -638,11 +678,10 @@ const Agent = ({
       if (sessionData && !welcomeSpoken) {
         setWelcomeSpoken(true);
         nameUsageCountRef.current = 0;
-
         setRecommendationStreams({});
         setReadRecommendations(new Set());
 
-        const welcomeText = safeT('welcome_farm_plan');
+        const welcomeText = safeT('welcome_feed_plan', 'Welcome! I\'ve prepared your customized poultry feed plan based on your birds and stage.');
         await speakWithVoice(welcomeText);
         await new Promise(resolve => setTimeout(resolve, 2000));
         await streamAllRecommendations();
@@ -654,63 +693,38 @@ const Agent = ({
       toast.error(safeT('failed_to_start', { message: error.message }));
     } finally {
       setIsLoading(false);
+      setIsProcessing(false);
     }
   };
 
-  const isStartButtonDisabled = isLoading || !voiceEnabled || !hasPaid || voiceInitializing;
+  const isStartButtonDisabled = isLoading || voiceInitializing || isProcessing;
 
   const getStartButtonText = () => {
     if (isLoading) return safeT('starting');
     if (voiceInitializing) return safeT('initializing');
-    if (!hasPaid) return safeT('pay_to_start', { symbol: getDisplaySymbol(), amount: 3 });
     if (!voiceEnabled) return "Turn Voice ON First";
-    return safeT('start_voice_session');
+    return safeT('start_voice_session', 'Hear Recommendations');
   };
 
+  // ========== HELPER TO CHECK HTML CONTENT ==========
+  const isHTMLContent = (content: string): boolean => {
+    return content.trim().startsWith('<table') || content.trim().startsWith('<style');
+  };
+
+  // ========== RENDER FEED RECOMMENDATION TEXT ==========
   const renderRecommendationText = (item: StructuredItem, idx: number) => {
     let displayContent = '';
-
     if (item.params?.content) {
       displayContent = item.params.content;
-    } else if (item.key === 'gap_grouped') {
-      const parts = [];
-      if (item.params?.title) parts.push(item.params.title);
-      let gapKey = item.params?.gapKey;
-      if (!gapKey && cropName) {
-        gapKey = getGapKeyFromCrop(cropName);
-      }
-      if (gapKey) parts.push(safeT(gapKey, {}));
-      if (item.params?.remember) parts.push(item.params.remember);
-      displayContent = parts.join(LINE_BREAK);
-    } else if (item.key === 'damage_report_grouped') {
-      const parts = [];
-      if (item.params?.title) parts.push(item.params.title);
-      if (item.params?.message) parts.push(item.params.message);
-      if (item.params?.advice) parts.push(item.params.advice);
-      if (item.params?.followUp) parts.push(item.params.followUp);
-      displayContent = parts.join(LINE_BREAK);
-    } else if (item.key === 'crop_benefits_grouped') {
-      const p = item.params;
-      const parts = [];
-      if (p.title) parts.push(p.title);
-      if (p.subtitle) parts.push(p.subtitle);
-      if (p.nutrientsHeader) parts.push(p.nutrientsHeader);
-      if (p.nutrientsList) parts.push(p.nutrientsList);
-      if (p.healthHeader) parts.push(p.healthHeader);
-      if (p.healthList) parts.push(p.healthList);
-      displayContent = parts.join(LINE_BREAK);
     } else {
       displayContent = safeT(item.key, item.params);
     }
 
-    if (!displayContent || displayContent.trim() === '') {
-      return null;
-    }
+    if (!displayContent || displayContent.trim() === '') return null;
 
     const displayedText = recommendationStreams[idx] || '';
     const isActive = activeStreamingRec === idx;
     const isRead = readRecommendations.has(idx);
-
     if (!isActive && !isRead) return null;
 
     const finalText = isActive ? displayedText : displayContent;
@@ -727,6 +741,104 @@ const Agent = ({
       processedText = processedText.replace(/Ksh/g, displaySymbol);
     }
 
+    // Determine icon and title
+    let icon = null;
+    let title = '';
+    if (item.key === 'feed_summary') { icon = <Package className="w-5 h-5" />; title = safeT('feed_summary_title', 'Feed Summary'); }
+    else if (item.key === 'ingredient_table') { icon = <Scale className="w-5 h-5" />; title = safeT('ingredient_table_title', 'Ingredients & Costs'); }
+    else if (item.key === 'ingredient_list') { icon = <ClipboardList className="w-5 h-5" />; title = safeT('ingredient_list_title', 'Ingredient List'); }
+    else if (item.key === 'nutritional_info') { icon = <Beaker className="w-5 h-5" />; title = safeT('nutritional_info_title', 'Nutritional Summary'); }
+    else if (item.key === 'total_cost') { icon = <DollarSign className="w-5 h-5" />; title = safeT('total_cost_title', 'Total Cost'); }
+    else if (item.key === 'mixing_instructions') { icon = <AlertCircle className="w-5 h-5" />; title = safeT('mixing_instructions_title', 'Mixing Instructions'); }
+    else if (item.key === 'safety_warnings') { icon = <Shield className="w-5 h-5" />; title = safeT('safety_warnings_title', 'Safety Warnings'); }
+    else if (item.key === 'voice_script') { icon = <Volume2 className="w-5 h-5" />; title = safeT('voice_summary_title', 'Voice Summary'); }
+    else { icon = <Sparkles className="w-5 h-5" />; title = item.key; }
+
+    // Skip rendering voice_script as visual – it's only for voice
+    if (item.key === 'voice_script') {
+      return (
+        <div key={idx} className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-4 border-2 border-purple-300">
+          <div className="flex items-center gap-3 text-purple-700">
+            <Volume2 className="w-5 h-5 animate-pulse" />
+            <span className="font-medium">{safeT('voice_summary_ready', '📢 Full formula summary spoken above')}</span>
+          </div>
+        </div>
+      );
+    }
+
+    // Handle ingredient_list (plain text list) – grid display
+    if (item.key === 'ingredient_list') {
+      const lines = processedText.split('\n').filter(line => line.trim());
+      return (
+        <div
+          key={idx}
+          className={`rounded-xl p-5 transition-all duration-300 border-2 ${
+            isActive ? 'bg-green-100 border-green-500 shadow-2xl scale-105' : 'bg-green-50 border-green-300'
+          }`}
+        >
+          <div className="flex items-start gap-4">
+            <span className="rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold flex-shrink-0 bg-green-500 text-white">
+              {idx + 1}
+            </span>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-3 text-green-700">
+                {icon}
+                <span className="font-semibold text-sm uppercase tracking-wide">{title}</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {lines.map((line, i) => {
+                  const match = line.match(/^([^:]+):\s*([\d.]+)\s*kg/i);
+                  if (match) {
+                    const [, name, amount] = match;
+                    return (
+                      <div key={i} className="flex justify-between items-center p-2 bg-white rounded-lg border border-gray-200">
+                        <span className="text-sm font-medium text-gray-700">{name.trim()}</span>
+                        <span className="text-sm font-bold text-emerald-600">{amount} kg</span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={i} className="p-2 bg-white rounded-lg border border-gray-200 text-sm text-gray-700">
+                      {line}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // If HTML content (rare, but keep for safety)
+    if (isHTMLContent(processedText)) {
+      return (
+        <div
+          key={idx}
+          className={`rounded-xl p-5 transition-all duration-300 border-2 ${
+            isActive ? 'bg-blue-100 border-blue-500 shadow-2xl scale-105' : 'bg-blue-50 border-blue-300'
+          }`}
+        >
+          <div className="flex items-start gap-4">
+            <span className="rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold flex-shrink-0 bg-blue-500 text-white">
+              {idx + 1}
+            </span>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2 text-blue-700">
+                {icon}
+                <span className="font-semibold text-sm uppercase tracking-wide">{title}</span>
+              </div>
+              <div
+                className="prose prose-sm max-w-full overflow-x-auto"
+                dangerouslySetInnerHTML={{ __html: processedText }}
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Otherwise, regular text rendering with karaoke
     const lines = processedText.split(/\n/);
     const progressPercent = (displayedText.length / displayContent.length) * 100;
 
@@ -734,15 +846,19 @@ const Agent = ({
       <div
         key={idx}
         className={`rounded-xl p-5 transition-all duration-300 border-2 ${
-          isActive ? 'bg-purple-100 border-purple-500 shadow-2xl scale-105' : 'bg-purple-50 border-purple-300'
+          isActive ? 'bg-blue-100 border-blue-500 shadow-2xl scale-105' : 'bg-blue-50 border-blue-300'
         }`}
       >
         <div className="flex items-start gap-4">
-          <span className="rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold flex-shrink-0 bg-purple-500 text-white">
+          <span className="rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold flex-shrink-0 bg-blue-500 text-white">
             {idx + 1}
           </span>
           <div className="flex-1">
-            <p className="text-xl text-gray-800 leading-relaxed">
+            <div className="flex items-center gap-2 mb-2 text-blue-700">
+              {icon}
+              <span className="font-semibold text-sm uppercase tracking-wide">{title}</span>
+            </div>
+            <p className="text-lg text-gray-800 leading-relaxed whitespace-pre-wrap">
               {lines.map((line, i) => (
                 <span key={i}>
                   {line}
@@ -753,12 +869,9 @@ const Agent = ({
             {isActive && displayContent.length > 0 && (
               <div className="mt-3 flex items-center gap-2">
                 <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-purple-600 transition-all duration-150"
-                    style={{ width: `${progressPercent}%` }}
-                  />
+                  <div className="h-full bg-blue-600 transition-all duration-150" style={{ width: `${progressPercent}%` }} />
                 </div>
-                <span className="text-sm text-purple-700 font-medium">
+                <span className="text-sm text-blue-700 font-medium">
                   {Math.round(progressPercent)}%
                 </span>
               </div>
@@ -769,8 +882,10 @@ const Agent = ({
     );
   };
 
+  // ========== RENDER ==========
   return (
     <div className="flex flex-col gap-6 p-4 bg-gradient-to-br from-slate-50 to-white rounded-2xl">
+      {/* Header */}
       <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-4 shadow-lg border border-emerald-100">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -783,24 +898,12 @@ const Agent = ({
             <div>
               <h4 className="font-bold text-lg text-gray-800">{userName}</h4>
               <div className="flex flex-wrap gap-1 text-xs">
-                {sessionData?.crops && <span className="text-emerald-600">{sessionData.crops.join(", ")}</span>}
-                {sessionData?.county && <span className="text-gray-500">• {sessionData.county}</span>}
+                {breed && <span className="text-emerald-600 font-medium">{breed}</span>}
+                {stage && <span className="text-gray-500">• {stage}</span>}
+                {quantityKg > 0 && <span className="text-gray-400">• {quantityKg} kg</span>}
+                {county && <span className="text-gray-400">• {county}</span>}
                 {sessionData?.country && <span className="text-gray-400">• {sessionData.country}</span>}
-                {hasSoilTest && <span className="text-purple-600">• {safeT('soil_test')}</span>}
               </div>
-              {interviewId && userId && (
-                <div className="mt-1">
-                  {hasPaid ? (
-                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                      {safeT('payment_verified', { symbol: getDisplaySymbol(), amount: 3 })}
-                    </span>
-                  ) : (
-                    <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-                      {safeT('payment_required', { symbol: getDisplaySymbol(), amount: 3 })}
-                    </span>
-                  )}
-                </div>
-              )}
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -822,108 +925,102 @@ const Agent = ({
             </button>
           </div>
         </div>
-        {isSpeaking && (
-          <div className="mt-2 text-xs text-blue-600 flex items-center gap-1">
-            <Volume2 className="w-3 h-3 animate-pulse" />
-            <span>{safeT('speaking')}</span>
-          </div>
-        )}
       </div>
 
-      {!voiceEnabled && structuredList.length > 0 && (
-        <div className="bg-yellow-100 border-l-4 border-yellow-500 rounded-lg p-4">
-          <div className="flex items-center gap-3">
-            <VolumeX className="w-6 h-6 text-yellow-600" />
-            <div>
-              <p className="font-semibold text-yellow-800">Voice is OFF</p>
-              <p className="text-sm text-yellow-700">Click "Voice ON" above, then "Start Voice Session" to hear recommendations with karaoke effect.</p>
-            </div>
-          </div>
-        </div>
-      )}
-
+      {/* Quick action buttons */}
       <div className="flex flex-row gap-4 justify-center">
-        {sessionData?.grossMarginAnalysis && (
-          <Link href={`/financial/${interviewId}`} className="flex-1">
-            <button className="w-full px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-bold hover:from-emerald-700 hover:to-teal-700 flex items-center justify-center gap-2">
-              <BarChart3 className="w-5 h-5" />
-              {safeT('view_financial_analysis')}
-            </button>
-          </Link>
-        )}
         <Link href={`/ask/${interviewId}`} className="flex-1">
           <button className="w-full px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl font-bold hover:from-purple-700 hover:to-pink-700 flex items-center justify-center gap-2">
             <MessageCircle className="w-5 h-5" />
-            {safeT('ask_questions')}
+            {safeT('ask_questions', 'Ask Questions')}
           </button>
         </Link>
+        <button
+          onClick={startVoiceInterview}
+          disabled={isStartButtonDisabled}
+          className="flex-1 px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-bold hover:from-emerald-700 hover:to-teal-700 flex items-center justify-center gap-2 disabled:opacity-50"
+        >
+          <Volume2 className="w-5 h-5" />
+          {safeT('hear_recommendations', 'Hear Recommendations')}
+        </button>
       </div>
 
+      {/* Feed Recommendations */}
       {structuredList.length > 0 && (
-        <div className="bg-white rounded-2xl p-6 border-2 border-purple-200 shadow-xl">
-          <h3 className="font-bold text-2xl mb-4 flex items-center gap-2 text-purple-800">
-            <Sparkles className="w-6 h-6 text-purple-600" />
-            {safeT('personalized_recommendations')}
+        <div className="bg-white rounded-2xl p-6 border-2 border-blue-200 shadow-xl">
+          <h3 className="font-bold text-2xl mb-4 flex items-center gap-2 text-blue-800">
+            <Sparkles className="w-6 h-6 text-blue-600" />
+            {safeT('custom_feed_formula', 'Custom Feed Formula')}
             {activeStreamingRec !== null && (
-              <span className="ml-auto flex items-center gap-2 text-purple-600">
+              <span className="ml-auto flex items-center gap-2 text-blue-600">
                 <Volume2 className="w-5 h-5 animate-pulse" />
-                <span className="text-sm">{safeT('speaking')}</span>
+                <span className="text-sm">{safeT('speaking', 'Speaking')}</span>
               </span>
             )}
           </h3>
           <div className="mb-6 p-3 bg-gradient-to-r from-amber-400 to-yellow-500 rounded-xl text-white">
             <p className="text-sm flex items-center gap-2">
               <Rocket className="w-4 h-4" />
-              {safeT('business_tip_short')}
+              {safeT('feed_business_tip', 'Business Tip: Mix accurately to avoid waste and maximize growth.')}
             </p>
           </div>
           <div className="space-y-4">
             {structuredList.map((item, idx) => renderRecommendationText(item, idx))}
           </div>
-          {interventions.length > 0 && (
-            <div className="mt-6 p-4 bg-blue-50 rounded-xl border-2 border-blue-300">
-              <h4 className="font-bold text-blue-800 mb-3 flex items-center gap-2">
-                <Beaker className="w-5 h-5" />
-                {safeT('precision_fertilizer_calculations')}
-              </h4>
-              <div className="space-y-3">
-                {interventions.map((inv: any, idx: number) => (
-                  <div key={idx} className="border-l-4 border-red-500 pl-3 py-1">
-                    <p className="font-semibold text-gray-800">{inv.nutrient}: {inv.value} ({inv.level})</p>
-                    <p className="text-sm text-gray-700">{inv.recommendation}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {!hasSoilTest && (
-            <div className="mt-4 p-3 bg-yellow-50 rounded-lg border border-yellow-300">
-              <p className="text-yellow-800 text-sm flex items-center gap-2">
-                <AlertCircle className="w-4 h-4" />
-                {safeT('soil_test_reminder')}
+          <div className="mt-4 text-center text-sm text-gray-500">
+            {safeT('feed_disclaimer', 'Store feed in a dry, cool place and use within 2 weeks.')}
+          </div>
+          {sessionData?.feedResult?.warnings && sessionData.feedResult.warnings.length > 0 && (
+            <div className="mt-4 p-3 bg-red-50 rounded-lg border border-red-300">
+              <p className="text-red-800 text-sm flex items-center gap-2">
+                <Shield className="w-4 h-4" />
+                {sessionData.feedResult.warnings.join(' ')}
               </p>
             </div>
           )}
-          <div className="mt-4 text-center text-sm text-gray-500">
-            {safeT('yearly_testing_reminder')}
+        </div>
+      )}
+
+      {/* Location Info (if available) */}
+      {(county || subCounty || ward || village) && (
+        <div className="bg-white rounded-xl p-4 border border-gray-200">
+          <h4 className="font-semibold text-gray-700 mb-2 flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-gray-500" />
+            {safeT('location_info', 'Location')}
+          </h4>
+          <div className="flex flex-wrap gap-2 text-sm text-gray-600">
+            {county && <span className="bg-gray-100 px-3 py-1 rounded-full">🏛️ {county}</span>}
+            {subCounty && <span className="bg-gray-100 px-3 py-1 rounded-full">📌 {subCounty}</span>}
+            {ward && <span className="bg-gray-100 px-3 py-1 rounded-full">📍 {ward}</span>}
+            {village && <span className="bg-gray-100 px-3 py-1 rounded-full">🏘️ {village}</span>}
           </div>
         </div>
       )}
 
-      <MPESAPaymentModal
-        isOpen={showPaymentModal}
-        onClose={() => setShowPaymentModal(false)}
-        onSuccess={() => {
-          setShowPaymentModal(false);
-          setHasPaid(true);
-          setPaymentUsed(false);
-          toast.success(safeT('payment_confirmed'));
-          setTimeout(() => startVoiceInterview(), 1500);
-        }}
-        cost={3}
-        interviewId={interviewId || ""}
-        userId={userId || ""}
-      />
+      {/* Farmers Comments Section */}
+      <div className="mt-2 p-4 bg-gray-50 rounded-xl border-2 border-gray-300">
+        <h4 className="font-bold text-gray-700 mb-2 flex items-center gap-2">
+          💬 {safeT('farmers_comments', 'Farmers Comments / Suggestions')}
+        </h4>
+        <textarea
+          value={farmerComment}
+          onChange={(e) => setFarmerComment(e.target.value)}
+          placeholder={safeT('write_suggestion_placeholder', 'Write your suggestion to improve the content...')}
+          className="w-full p-3 border rounded-xl text-gray-800 h-24 resize-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+        />
+        <button
+          onClick={submitFarmerComment}
+          disabled={!farmerComment.trim() || isCommentSubmitting}
+          className="mt-2 px-6 py-2 bg-blue-600 text-white rounded-xl font-medium disabled:opacity-50 hover:bg-blue-700 transition-colors"
+        >
+          {isCommentSubmitting
+            ? safeT('submitting', 'Submitting...')
+            : safeT('submit_farmers_comment', 'Submit Farmers Comment')}
+        </button>
+        {commentSubmitted && (
+          <p className="text-green-600 text-sm mt-2">✅ {safeT('thanks_for_feedback', 'Thank you! Your comment helps us improve.')}</p>
+        )}
+      </div>
 
       <OfflineBanner />
     </div>
