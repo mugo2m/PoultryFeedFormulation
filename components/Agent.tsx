@@ -752,6 +752,8 @@ const Agent = ({
     else if (item.key === 'mixing_instructions') { icon = <AlertCircle className="w-5 h-5" />; title = safeT('mixing_instructions_title', 'Mixing Instructions'); }
     else if (item.key === 'safety_warnings') { icon = <Shield className="w-5 h-5" />; title = safeT('safety_warnings_title', 'Safety Warnings'); }
     else if (item.key === 'voice_script') { icon = <Volume2 className="w-5 h-5" />; title = safeT('voice_summary_title', 'Voice Summary'); }
+    // ===== ADDED: optimization_status =====
+    else if (item.key === 'optimization_status') { icon = <Sparkles className="w-5 h-5" />; title = safeT('optimization_status_title', 'Optimization Status'); }
     else { icon = <Sparkles className="w-5 h-5" />; title = item.key; }
 
     // Skip rendering voice_script as visual – it's only for voice

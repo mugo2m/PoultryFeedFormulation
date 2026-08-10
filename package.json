@@ -28,7 +28,6 @@
     "i18next": "^25.8.14",
     "i18next-resources-to-backend": "^1.2.1",
     "ioredis": "^5.10.0",
-    "javascript-lp-solver": "^1.0.3",
     "lucide-react": "^0.482.0",
     "mammoth": "^1.11.0",
     "next": "16.1.0",
@@ -50,6 +49,7 @@
     "twilio": "^5.12.0",
     "uuid": "^13.0.0",
     "xlsx": "^0.18.5",
+    "yalps": "^0.6.4",
     "zod": "^3.25.76"
   },
   "devDependencies": {

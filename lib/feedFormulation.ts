@@ -1,30 +1,52 @@
 // lib/feedFormulation.ts
-// Complete Poultry Feed Formulation Engine
-// This module calculates custom feed formulations based on breed, stage, quantity, available ingredients, and custom prices.
+// Complete Poultry Feed Formulation Engine with LP Cost Optimization using yalps
+
+import yalps from 'yalps';
 
 export interface Ingredient {
   name: string;
-  amountKg: number;      // Amount needed for the batch (after adjusting for available ingredients)
-  percent: number;       // Percentage in the formula
-  cost: number;          // Total cost for this ingredient in the batch
-  pricePerKg: number;    // Price per kg (in KES equivalent)
-  available: boolean;    // True if the farmer already has this ingredient
+  amountKg: number;
+  percent: number;
+  cost: number;
+  pricePerKg: number;
+  available: boolean;
 }
 
 export interface NutritionalSummary {
-  protein: number;       // Crude protein %
-  calcium: number;       // Calcium %
-  energy: number;        // Energy in kcal/kg (ME)
+  protein: number;
+  calcium: number;
+  energy: number;
 }
 
 export interface FeedResult {
   ingredients: Ingredient[];
-  totalCost: number;     // Total cost in base currency (KES or local)
+  totalCost: number;
   nutritionalSummary: NutritionalSummary;
   mixingInstructions: string;
   warnings: string[];
-  structuredList: Array<{ key: string; params: { content: string } }>; // For voice/display
+  structuredList: Array<{ key: string; params: { content: string } }>;
 }
+
+// ========== NUTRITIONAL COMPOSITION OF EACH INGREDIENT ==========
+const INGREDIENT_NUTRIENTS: Record<string, { protein: number; calcium: number; energy: number }> = {
+  'broken maize': { protein: 0.08, calcium: 0.0005, energy: 3500 },
+  'soya bean meal': { protein: 0.45, calcium: 0.002, energy: 2400 },
+  'fish meal': { protein: 0.60, calcium: 0.05, energy: 2000 },
+  'sunflower cake': { protein: 0.35, calcium: 0.005, energy: 2000 },
+  'wheat bran': { protein: 0.14, calcium: 0.001, energy: 1200 },
+  'maize bran': { protein: 0.10, calcium: 0.0005, energy: 1500 },
+  'wheat pollard': { protein: 0.15, calcium: 0.0008, energy: 1400 },
+  'cotton seed cake': { protein: 0.38, calcium: 0.0015, energy: 1800 },
+  'lime': { protein: 0, calcium: 0.38, energy: 0 },
+  'dcp': { protein: 0, calcium: 0.22, energy: 0 },
+  'premix': { protein: 0, calcium: 0, energy: 0 },
+  'methionine': { protein: 0, calcium: 0, energy: 0 },
+  'lysine': { protein: 0, calcium: 0, energy: 0 },
+  'threonine': { protein: 0, calcium: 0, energy: 0 },
+  'tryptophan': { protein: 0, calcium: 0, energy: 0 },
+  'salt': { protein: 0, calcium: 0, energy: 0 },
+  'toxin binder': { protein: 0, calcium: 0, energy: 0 },
+};
 
 // ========== DEFAULT INGREDIENT PRICES (KES per kg) ==========
 const DEFAULT_INGREDIENT_PRICES: Record<string, number> = {
@@ -63,439 +85,136 @@ const COUNTRY_PRICE_MULTIPLIERS: Record<string, number> = {
   'ethiopia': 1.2,
 };
 
-// ========== GET INGREDIENT PRICE (with custom override) ==========
 function getIngredientPrice(
   ingredient: string,
   country: string = 'kenya',
   customPrices?: Record<string, number>
 ): number {
-  const normalizedIngredient = ingredient.toLowerCase().trim();
-  // If custom price provided and valid, use it
-  if (customPrices && customPrices[normalizedIngredient] !== undefined && customPrices[normalizedIngredient] > 0) {
-    return customPrices[normalizedIngredient];
+  const normalized = ingredient.toLowerCase().trim();
+  if (customPrices && customPrices[normalized] !== undefined && customPrices[normalized] > 0) {
+    return customPrices[normalized];
   }
-  // Otherwise use default with country multiplier
-  const basePrice = DEFAULT_INGREDIENT_PRICES[normalizedIngredient] || 100;
+  const base = DEFAULT_INGREDIENT_PRICES[normalized] || 100;
   const multiplier = COUNTRY_PRICE_MULTIPLIERS[country.toLowerCase()] || 1.0;
-  return basePrice * multiplier;
+  return base * multiplier;
 }
 
 // ========== FEED FORMULAS ==========
-// Each formula is a percentage breakdown of ingredients for 100 kg of feed.
-// Format: { ingredientName: percentage }
-// ALL FORMULAS NOW SUM TO EXACTLY 100.00%
-interface FeedFormula {
-  [ingredient: string]: number;
+const DUAL_PURPOSE_FORMULAS = {
+  starter: {
+    'broken maize': 53.45,
+    'soya bean meal': 22,
+    'fish meal': 6,
+    'sunflower cake': 4,
+    'wheat bran': 0,
+    'maize bran': 3,
+    'wheat pollard': 2,
+    'cotton seed cake': 5,
+    'lime': 2.0,
+    'dcp': 1.2,
+    'premix': 0.5,
+    'methionine': 0.2,
+    'lysine': 0.12,
+    'threonine': 0.08,
+    'tryptophan': 0.05,
+    'salt': 0.3,
+    'toxin binder': 0.1,
+  },
+  grower: {
+    'broken maize': 59.12,
+    'soya bean meal': 19,
+    'fish meal': 4,
+    'sunflower cake': 4,
+    'wheat bran': 0,
+    'maize bran': 3,
+    'wheat pollard': 2,
+    'cotton seed cake': 5,
+    'lime': 1.8,
+    'dcp': 0.8,
+    'premix': 0.5,
+    'methionine': 0.15,
+    'lysine': 0.1,
+    'threonine': 0.08,
+    'tryptophan': 0.05,
+    'salt': 0.3,
+    'toxin binder': 0.1,
+  },
+  layer: {
+    'broken maize': 53.95,
+    'soya bean meal': 17,
+    'fish meal': 3.5,
+    'sunflower cake': 4,
+    'wheat bran': 0,
+    'maize bran': 2,
+    'wheat pollard': 3,
+    'cotton seed cake': 4,
+    'lime': 10.0,
+    'dcp': 1.2,
+    'premix': 0.5,
+    'methionine': 0.2,
+    'lysine': 0.12,
+    'threonine': 0.08,
+    'tryptophan': 0.05,
+    'salt': 0.3,
+    'toxin binder': 0.1,
+  },
+};
+
+const BROILER_FORMULAS = {
+  starter: {
+    'broken maize': 52.65,
+    'soya bean meal': 25,
+    'fish meal': 6,
+    'sunflower cake': 4,
+    'wheat bran': 0,
+    'maize bran': 2,
+    'wheat pollard': 2,
+    'cotton seed cake': 4,
+    'lime': 1.5,
+    'dcp': 1.2,
+    'premix': 0.5,
+    'methionine': 0.3,
+    'lysine': 0.2,
+    'threonine': 0.15,
+    'tryptophan': 0.1,
+    'salt': 0.3,
+    'toxin binder': 0.1,
+  },
+  finisher: {
+    'broken maize': 57.3,
+    'soya bean meal': 22,
+    'fish meal': 4,
+    'sunflower cake': 4,
+    'wheat bran': 0,
+    'maize bran': 3,
+    'wheat pollard': 2,
+    'cotton seed cake': 4,
+    'lime': 1.5,
+    'dcp': 0.8,
+    'premix': 0.5,
+    'methionine': 0.2,
+    'lysine': 0.15,
+    'threonine': 0.1,
+    'tryptophan': 0.05,
+    'salt': 0.3,
+    'toxin binder': 0.1,
+  },
+};
+
+const DUAL_PURPOSE_BREEDS = ['local', 'layers', 'sasso', 'kenbrew', 'kroiler', 'sussex'];
+const FORMULAS: Record<string, Record<string, Record<string, number>>> = {};
+
+for (const breed of DUAL_PURPOSE_BREEDS) {
+  FORMULAS[breed] = {
+    starter: { ...DUAL_PURPOSE_FORMULAS.starter },
+    grower: { ...DUAL_PURPOSE_FORMULAS.grower },
+    layer: { ...DUAL_PURPOSE_FORMULAS.layer },
+  };
 }
 
-const FORMULAS: Record<string, Record<string, FeedFormula>> = {
-  // BREED: Local
-  'local': {
-    'starter': {
-      'broken maize': 53.45,
-      'soya bean meal': 22,
-      'fish meal': 6,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 3,
-      'wheat pollard': 2,
-      'cotton seed cake': 5,
-      'lime': 2.0,
-      'dcp': 1.2,
-      'premix': 0.5,
-      'methionine': 0.2,
-      'lysine': 0.12,
-      'threonine': 0.08,
-      'tryptophan': 0.05,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-    'grower': {
-      'broken maize': 59.12,
-      'soya bean meal': 19,
-      'fish meal': 4,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 3,
-      'wheat pollard': 2,
-      'cotton seed cake': 5,
-      'lime': 1.8,
-      'dcp': 0.8,
-      'premix': 0.5,
-      'methionine': 0.15,
-      'lysine': 0.1,
-      'threonine': 0.08,
-      'tryptophan': 0.05,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-    'layer': {
-      'broken maize': 53.95,
-      'soya bean meal': 17,
-      'fish meal': 3.5,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 2,
-      'wheat pollard': 3,
-      'cotton seed cake': 4,
-      'lime': 10.0,
-      'dcp': 1.2,
-      'premix': 0.5,
-      'methionine': 0.2,
-      'lysine': 0.12,
-      'threonine': 0.08,
-      'tryptophan': 0.05,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-  },
-
-  // BREED: Layers (commercial)
-  'layers': {
-    'starter': {
-      'broken maize': 53.45,
-      'soya bean meal': 22,
-      'fish meal': 6,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 3,
-      'wheat pollard': 2,
-      'cotton seed cake': 5,
-      'lime': 2.0,
-      'dcp': 1.2,
-      'premix': 0.5,
-      'methionine': 0.2,
-      'lysine': 0.12,
-      'threonine': 0.08,
-      'tryptophan': 0.05,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-    'grower': {
-      'broken maize': 59.12,
-      'soya bean meal': 19,
-      'fish meal': 4,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 3,
-      'wheat pollard': 2,
-      'cotton seed cake': 5,
-      'lime': 1.8,
-      'dcp': 0.8,
-      'premix': 0.5,
-      'methionine': 0.15,
-      'lysine': 0.1,
-      'threonine': 0.08,
-      'tryptophan': 0.05,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-    'layer': {
-      'broken maize': 53.95,
-      'soya bean meal': 17,
-      'fish meal': 3.5,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 2,
-      'wheat pollard': 3,
-      'cotton seed cake': 4,
-      'lime': 10.0,
-      'dcp': 1.2,
-      'premix': 0.5,
-      'methionine': 0.2,
-      'lysine': 0.12,
-      'threonine': 0.08,
-      'tryptophan': 0.05,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-  },
-
-  // BREED: Sasso
-  'sasso': {
-    'starter': {
-      'broken maize': 53.45,
-      'soya bean meal': 22,
-      'fish meal': 6,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 3,
-      'wheat pollard': 2,
-      'cotton seed cake': 5,
-      'lime': 2.0,
-      'dcp': 1.2,
-      'premix': 0.5,
-      'methionine': 0.2,
-      'lysine': 0.12,
-      'threonine': 0.08,
-      'tryptophan': 0.05,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-    'grower': {
-      'broken maize': 59.12,
-      'soya bean meal': 19,
-      'fish meal': 4,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 3,
-      'wheat pollard': 2,
-      'cotton seed cake': 5,
-      'lime': 1.8,
-      'dcp': 0.8,
-      'premix': 0.5,
-      'methionine': 0.15,
-      'lysine': 0.1,
-      'threonine': 0.08,
-      'tryptophan': 0.05,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-    'layer': {
-      'broken maize': 53.95,
-      'soya bean meal': 17,
-      'fish meal': 3.5,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 2,
-      'wheat pollard': 3,
-      'cotton seed cake': 4,
-      'lime': 10.0,
-      'dcp': 1.2,
-      'premix': 0.5,
-      'methionine': 0.2,
-      'lysine': 0.12,
-      'threonine': 0.08,
-      'tryptophan': 0.05,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-  },
-
-  // BREED: Kenbrew
-  'kenbrew': {
-    'starter': {
-      'broken maize': 53.45,
-      'soya bean meal': 22,
-      'fish meal': 6,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 3,
-      'wheat pollard': 2,
-      'cotton seed cake': 5,
-      'lime': 2.0,
-      'dcp': 1.2,
-      'premix': 0.5,
-      'methionine': 0.2,
-      'lysine': 0.12,
-      'threonine': 0.08,
-      'tryptophan': 0.05,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-    'grower': {
-      'broken maize': 59.12,
-      'soya bean meal': 19,
-      'fish meal': 4,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 3,
-      'wheat pollard': 2,
-      'cotton seed cake': 5,
-      'lime': 1.8,
-      'dcp': 0.8,
-      'premix': 0.5,
-      'methionine': 0.15,
-      'lysine': 0.1,
-      'threonine': 0.08,
-      'tryptophan': 0.05,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-    'layer': {
-      'broken maize': 53.95,
-      'soya bean meal': 17,
-      'fish meal': 3.5,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 2,
-      'wheat pollard': 3,
-      'cotton seed cake': 4,
-      'lime': 10.0,
-      'dcp': 1.2,
-      'premix': 0.5,
-      'methionine': 0.2,
-      'lysine': 0.12,
-      'threonine': 0.08,
-      'tryptophan': 0.05,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-  },
-
-  // BREED: Kroiler
-  'kroiler': {
-    'starter': {
-      'broken maize': 53.45,
-      'soya bean meal': 22,
-      'fish meal': 6,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 3,
-      'wheat pollard': 2,
-      'cotton seed cake': 5,
-      'lime': 2.0,
-      'dcp': 1.2,
-      'premix': 0.5,
-      'methionine': 0.2,
-      'lysine': 0.12,
-      'threonine': 0.08,
-      'tryptophan': 0.05,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-    'grower': {
-      'broken maize': 59.12,
-      'soya bean meal': 19,
-      'fish meal': 4,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 3,
-      'wheat pollard': 2,
-      'cotton seed cake': 5,
-      'lime': 1.8,
-      'dcp': 0.8,
-      'premix': 0.5,
-      'methionine': 0.15,
-      'lysine': 0.1,
-      'threonine': 0.08,
-      'tryptophan': 0.05,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-    'layer': {
-      'broken maize': 53.95,
-      'soya bean meal': 17,
-      'fish meal': 3.5,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 2,
-      'wheat pollard': 3,
-      'cotton seed cake': 4,
-      'lime': 10.0,
-      'dcp': 1.2,
-      'premix': 0.5,
-      'methionine': 0.2,
-      'lysine': 0.12,
-      'threonine': 0.08,
-      'tryptophan': 0.05,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-  },
-
-  // BREED: Broiler
-  'broiler': {
-    'starter': {
-      'broken maize': 52.65,
-      'soya bean meal': 25,
-      'fish meal': 6,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 2,
-      'wheat pollard': 2,
-      'cotton seed cake': 4,
-      'lime': 1.5,
-      'dcp': 1.2,
-      'premix': 0.5,
-      'methionine': 0.3,
-      'lysine': 0.2,
-      'threonine': 0.15,
-      'tryptophan': 0.1,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-    'finisher': {
-      'broken maize': 57.3,
-      'soya bean meal': 22,
-      'fish meal': 4,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 3,
-      'wheat pollard': 2,
-      'cotton seed cake': 4,
-      'lime': 1.5,
-      'dcp': 0.8,
-      'premix': 0.5,
-      'methionine': 0.2,
-      'lysine': 0.15,
-      'threonine': 0.1,
-      'tryptophan': 0.05,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-  },
-
-  // BREED: Sussex
-  'sussex': {
-    'starter': {
-      'broken maize': 53.45,
-      'soya bean meal': 22,
-      'fish meal': 6,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 3,
-      'wheat pollard': 2,
-      'cotton seed cake': 5,
-      'lime': 2.0,
-      'dcp': 1.2,
-      'premix': 0.5,
-      'methionine': 0.2,
-      'lysine': 0.12,
-      'threonine': 0.08,
-      'tryptophan': 0.05,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-    'grower': {
-      'broken maize': 59.12,
-      'soya bean meal': 19,
-      'fish meal': 4,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 3,
-      'wheat pollard': 2,
-      'cotton seed cake': 5,
-      'lime': 1.8,
-      'dcp': 0.8,
-      'premix': 0.5,
-      'methionine': 0.15,
-      'lysine': 0.1,
-      'threonine': 0.08,
-      'tryptophan': 0.05,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-    'layer': {
-      'broken maize': 53.95,
-      'soya bean meal': 17,
-      'fish meal': 3.5,
-      'sunflower cake': 4,
-      'wheat bran': 0,
-      'maize bran': 2,
-      'wheat pollard': 3,
-      'cotton seed cake': 4,
-      'lime': 10.0,
-      'dcp': 1.2,
-      'premix': 0.5,
-      'methionine': 0.2,
-      'lysine': 0.12,
-      'threonine': 0.08,
-      'tryptophan': 0.05,
-      'salt': 0.3,
-      'toxin binder': 0.1,
-    },
-  },
+FORMULAS['broiler'] = {
+  starter: { ...BROILER_FORMULAS.starter },
+  finisher: { ...BROILER_FORMULAS.finisher },
 };
 
 // ========== NUTRITIONAL TARGETS ==========
@@ -506,8 +225,144 @@ const NUTRITION_TARGETS: Record<string, { protein: number; calcium: number; ener
   'finisher': { protein: 20, calcium: 0.7, energy: 2900 },
 };
 
-// ========== MAIN FORMULATION FUNCTION ==========
-export function formulateFeed(params: {
+// ========== LP OPTIMIZATION ENGINE (using yalps) ==========
+function optimizeWithLP(
+  ingredientNames: string[],
+  prices: Record<string, number>,
+  targets: { protein: number; calcium: number; energy: number },
+  quantityKg: number
+): Record<string, number> | null {
+  try {
+    // Build objective (cost per kg)
+    const objective: Record<string, number> = {};
+    for (const name of ingredientNames) {
+      objective[name] = prices[name] || 0;
+    }
+
+    // Define max limits for each ingredient
+    const MAX_LIMITS: Record<string, number> = {
+      'broken maize': 100,
+      'soya bean meal': 50,
+      'fish meal': 25,
+      'sunflower cake': 40,
+      'wheat bran': 25,
+      'maize bran': 25,
+      'wheat pollard': 25,
+      'cotton seed cake': 30,
+      'lime': 20,
+      'dcp': 10,
+      'premix': 2,
+      'methionine': 0.5,
+      'lysine': 0.5,
+      'threonine': 0.5,
+      'tryptophan': 0.5,
+      'salt': 1.5,
+      'toxin binder': 0.5,
+    };
+
+    // Build variables array
+    const variables: any[] = [];
+    for (const name of ingredientNames) {
+      const maxLimit = MAX_LIMITS[name] || quantityKg;
+      variables.push({
+        name: name,
+        bounds: { min: 0, max: Math.min(maxLimit, quantityKg) },
+        coefficient: objective[name],
+      });
+    }
+
+    // Build constraints
+    const constraints = [];
+
+    // Constraint 1: total weight
+    constraints.push({
+      name: 'total',
+      coefficients: ingredientNames.reduce((acc, name) => {
+        acc[name] = 1;
+        return acc;
+      }, {} as Record<string, number>),
+      bounds: { min: quantityKg - 1.0, max: quantityKg + 1.0 },
+    });
+
+    // Constraint 2: protein
+    constraints.push({
+      name: 'protein',
+      coefficients: ingredientNames.reduce((acc, name) => {
+        const nutri = INGREDIENT_NUTRIENTS[name];
+        acc[name] = nutri ? nutri.protein : 0;
+        return acc;
+      }, {} as Record<string, number>),
+      bounds: { min: ((targets.protein / 100) * quantityKg) - 0.3 },
+    });
+
+    // Constraint 3: calcium
+    constraints.push({
+      name: 'calcium',
+      coefficients: ingredientNames.reduce((acc, name) => {
+        const nutri = INGREDIENT_NUTRIENTS[name];
+        acc[name] = nutri ? nutri.calcium : 0;
+        return acc;
+      }, {} as Record<string, number>),
+      bounds: { min: ((targets.calcium / 100) * quantityKg) - 0.1 },
+    });
+
+    // Constraint 4: energy
+    constraints.push({
+      name: 'energy',
+      coefficients: ingredientNames.reduce((acc, name) => {
+        const nutri = INGREDIENT_NUTRIENTS[name];
+        acc[name] = nutri ? nutri.energy : 0;
+        return acc;
+      }, {} as Record<string, number>),
+      bounds: { min: (targets.energy * quantityKg) - 150 },
+    });
+
+    // Add upper bounds for protein, calcium, energy
+    constraints.forEach(c => {
+      if (c.name === 'protein') {
+        c.bounds.max = ((targets.protein / 100) * quantityKg) + 0.3;
+      }
+      if (c.name === 'calcium') {
+        c.bounds.max = ((targets.calcium / 100) * quantityKg) + 0.1;
+      }
+      if (c.name === 'energy') {
+        c.bounds.max = (targets.energy * quantityKg) + 150;
+      }
+    });
+
+    // Solve the LP
+    const result = yalps({
+      direction: 'min',
+      objective: objective,
+      constraints: constraints,
+      variables: variables,
+    });
+
+    console.log('📊 yalps result status:', result.status);
+
+    if (result && result.status === 'optimal') {
+      const amounts: Record<string, number> = {};
+      for (const name of ingredientNames) {
+        amounts[name] = result.variables[name] || 0;
+      }
+      const total = Object.values(amounts).reduce((s, v) => s + v, 0);
+      if (total < quantityKg - 0.5 || total > quantityKg + 0.5) {
+        console.warn('LP total weight out of range:', total);
+        return null;
+      }
+      return amounts;
+    }
+
+    console.warn('LP not optimal:', result?.status);
+    return null;
+  } catch (error) {
+    console.warn('LP optimization failed:', error);
+    return null;
+  }
+}
+
+// ========== MAIN EXPORT FUNCTION ==========
+export async function formulateFeed(params: {
   breed: string;
   stage: string;
   quantityKg: number;
@@ -515,7 +370,7 @@ export function formulateFeed(params: {
   availableIngredients?: string[];
   country?: string;
   ingredientPrices?: Record<string, number>;
-}): FeedResult {
+}): Promise<FeedResult> {
   const {
     breed,
     stage,
@@ -526,86 +381,102 @@ export function formulateFeed(params: {
     ingredientPrices = {},
   } = params;
 
-  // Normalize inputs
   const breedKey = breed.toLowerCase().trim();
   const stageKey = stage.toLowerCase().includes('starter') ? 'starter' :
                    stage.toLowerCase().includes('grower') ? 'grower' :
                    stage.toLowerCase().includes('layer') ? 'layer' :
                    stage.toLowerCase().includes('finisher') ? 'finisher' : 'starter';
 
-  // Validate breed and stage exist
   const breedFormulas = FORMULAS[breedKey];
   if (!breedFormulas) {
-    throw new Error(`Unsupported breed: ${breed}. Supported breeds are: ${Object.keys(FORMULAS).join(', ')}`);
-  }
-  const formula = breedFormulas[stageKey];
-  if (!formula) {
-    throw new Error(`Unsupported stage: ${stage} for breed ${breed}. Supported stages are: ${Object.keys(breedFormulas).join(', ')}`);
+    throw new Error(`Unsupported breed: ${breed}. Supported breeds: ${Object.keys(FORMULAS).join(', ')}`);
   }
 
-  // Calculate ingredient amounts (percentages * factor)
-  const factor = quantityKg / 100;
-  const ingredients: Ingredient[] = Object.entries(formula).map(([name, percent]) => {
-    const amount = percent * factor;
-    const pricePerKg = getIngredientPrice(name, country, ingredientPrices);
-    const cost = amount * pricePerKg;
-    return {
-      name,
-      amountKg: parseFloat(amount.toFixed(3)),
-      percent: parseFloat(percent.toFixed(2)),
-      cost: parseFloat(cost.toFixed(2)),
-      pricePerKg: parseFloat(pricePerKg.toFixed(2)),
-      available: false,
-    };
-  });
+  const fallbackFormula = breedFormulas[stageKey];
+  if (!fallbackFormula) {
+    const availableStages = Object.keys(breedFormulas).join(', ');
+    throw new Error(`Unsupported stage: ${stage}. Available stages for ${breed}: ${availableStages}`);
+  }
 
-  // Subtract available ingredients (reduce needed quantity by 50% if farmer has some)
-  const adjustedIngredients = ingredients.map(ing => {
-    const hasIngredient = availableIngredients.some(avail =>
-      avail.toLowerCase().includes(ing.name.toLowerCase())
-    );
-    if (hasIngredient) {
-      const reducedAmount = ing.amountKg * 0.5;
-      const reducedCost = reducedAmount * ing.pricePerKg;
-      return {
-        ...ing,
-        amountKg: parseFloat(reducedAmount.toFixed(3)),
-        cost: parseFloat(reducedCost.toFixed(2)),
-        available: true,
-      };
+  const nutrition = NUTRITION_TARGETS[stageKey] || NUTRITION_TARGETS['starter'];
+  const allIngredientNames = Object.keys(fallbackFormula);
+
+  const priceMap: Record<string, number> = {};
+  for (const name of allIngredientNames) {
+    priceMap[name] = getIngredientPrice(name, country, ingredientPrices);
+  }
+
+  const adjustedPrices = { ...priceMap };
+  for (const name of allIngredientNames) {
+    if (availableIngredients.some(a => a.toLowerCase().includes(name.toLowerCase()))) {
+      adjustedPrices[name] = 0;
     }
-    return ing;
-  });
+  }
 
-  // Remove ingredients with zero amount
-  const finalIngredients = adjustedIngredients.filter(ing => ing.amountKg > 0.01);
+  let optimizedAmounts: Record<string, number> | null = null;
+  let lpSuccess = false;
+  try {
+    optimizedAmounts = optimizeWithLP(allIngredientNames, adjustedPrices, nutrition, quantityKg);
+    if (optimizedAmounts) {
+      lpSuccess = true;
+    }
+  } catch (e) {
+    console.warn('LP error, falling back to fixed formula:', e);
+  }
 
-  // Calculate total cost
+  let finalIngredients: Ingredient[] = [];
+
+  if (lpSuccess && optimizedAmounts) {
+    for (const name of allIngredientNames) {
+      const amount = optimizedAmounts[name] || 0;
+      const pricePerKg = priceMap[name] || 0;
+      const cost = amount * pricePerKg;
+      const percent = quantityKg > 0 ? (amount / quantityKg) * 100 : 0;
+      const hasAvailable = availableIngredients.some(a => a.toLowerCase().includes(name.toLowerCase()));
+      if (amount > 0.001) {
+        finalIngredients.push({
+          name,
+          amountKg: parseFloat(amount.toFixed(3)),
+          percent: parseFloat(percent.toFixed(2)),
+          cost: parseFloat(cost.toFixed(2)),
+          pricePerKg: parseFloat(pricePerKg.toFixed(2)),
+          available: hasAvailable,
+        });
+      }
+    }
+  } else {
+    const factor = quantityKg / 100;
+    for (const [name, percent] of Object.entries(fallbackFormula)) {
+      const amount = percent * factor;
+      const pricePerKg = priceMap[name] || 0;
+      const cost = amount * pricePerKg;
+      const hasAvailable = availableIngredients.some(a => a.toLowerCase().includes(name.toLowerCase()));
+      if (amount > 0.001) {
+        finalIngredients.push({
+          name,
+          amountKg: parseFloat(amount.toFixed(3)),
+          percent: parseFloat(percent.toFixed(2)),
+          cost: parseFloat(cost.toFixed(2)),
+          pricePerKg: parseFloat(pricePerKg.toFixed(2)),
+          available: hasAvailable,
+        });
+      }
+    }
+  }
+
   const totalCost = finalIngredients.reduce((sum, ing) => sum + ing.cost, 0);
 
-  // Build ingredient lines for display
-  const ingredientLines = finalIngredients.map(ing => {
-    const availText = ing.available ? ' (you have some)' : '';
-    return `${ing.name}: ${ing.amountKg.toFixed(2)} kg (${ing.cost.toFixed(2)})${availText}`;
-  });
-
-  // Nutritional summary
-  const nutrition = NUTRITION_TARGETS[stageKey] || NUTRITION_TARGETS['starter'];
-
-  // Warnings
   const warnings: string[] = [];
   if (stageKey === 'layer' && includeCoccidiostat) {
-    warnings.push("⚠️ Coccidiostat is NOT allowed for laying hens – it has been removed from this formula.");
+    warnings.push("⚠️ Coccidiostat is NOT allowed for laying hens – it has been removed.");
   }
   if (stageKey === 'finisher') {
-    warnings.push("⚠️ Withdraw coccidiostat 5–7 days before slaughter if used.");
-  }
-  if (finalIngredients.length === 0) {
-    warnings.push("⚠️ You seem to have all ingredients already – you may not need to buy anything!");
+    warnings.push("⚠️ Withdraw coccidiostat 5–7 days before slaughter.");
   }
 
-  // Mixing instructions
-  let mixingInstructions = "Mix all ingredients thoroughly. For best results, grind maize and soya meal to a fine powder before mixing.";
+  const baseMixing = "For best results, first pre-mix all minerals (lime, dcp, salt, premix, methionine, lysine, threonine, tryptophan, and toxin binder) with 3 kg of maize bran, wheat bran, or maize germ. Mix thoroughly to ensure even distribution. Then combine this mineral premix with the remaining ingredients. Grind maize and soya meal to a fine powder before final mixing.";
+
+  let mixingInstructions = baseMixing;
   if (stageKey === 'starter') {
     mixingInstructions += " Starter feed should be crumbled or mashed for young chicks.";
   } else if (stageKey === 'layer') {
@@ -613,40 +484,65 @@ export function formulateFeed(params: {
   } else if (stageKey === 'finisher') {
     mixingInstructions += " For broiler finisher, mix with a little vegetable oil to reduce dust and increase energy.";
   }
+  mixingInstructions += " Designed by Mugo to assist farmers globally.";
 
-  // Build structured list (voice_script will be added by the API route)
-  const structuredList = [
-    {
-      key: "feed_summary",
-      params: {
-        content: `Feed formula for ${breed} ${stage} – ${quantityKg} kg batch`
-      }
-    },
-    {
-      key: "ingredient_list",
-      params: {
-        content: `Ingredients:\n${ingredientLines.join('\n')}`
-      }
-    },
-    {
-      key: "nutritional_info",
-      params: {
-        content: `Nutritional Summary: Protein ~${nutrition.protein}%, Calcium ~${nutrition.calcium}%, Energy ~${nutrition.energy} kcal/kg`
-      }
-    },
-    {
-      key: "total_cost",
-      params: {
-        content: `Total Cost: ${totalCost.toFixed(2)}`
-      }
-    },
-    {
-      key: "mixing_instructions",
-      params: {
-        content: mixingInstructions
-      }
+  const ingredientLines = finalIngredients.map(ing => {
+    const avail = ing.available ? ' (you have some)' : '';
+    return `${ing.name}: ${ing.amountKg.toFixed(2)} kg (${ing.cost.toFixed(2)})${avail}`;
+  });
+
+  const structuredList = [];
+
+  structuredList.push({
+    key: "feed_summary",
+    params: {
+      content: `Feed formula for ${breed} ${stage} – ${quantityKg} kg batch`
     }
-  ];
+  });
+
+  if (lpSuccess) {
+    structuredList.push({
+      key: "optimization_status",
+      params: {
+        content: "✅ LP optimization succeeded and calculated the cheapest mix for your selected ingredients and prices."
+      }
+    });
+  } else {
+    structuredList.push({
+      key: "optimization_status",
+      params: {
+        content: "ℹ️ Using fixed formula – LP optimization did not find a feasible solution. Try adding more ingredients for cost optimization."
+      }
+    });
+  }
+
+  structuredList.push({
+    key: "ingredient_list",
+    params: {
+      content: `Ingredients:\n${ingredientLines.join('\n')}`
+    }
+  });
+
+  structuredList.push({
+    key: "nutritional_info",
+    params: {
+      content: `Nutritional Summary: Protein ~${nutrition.protein}%, Calcium ~${nutrition.calcium}%, Energy ~${nutrition.energy} kcal/kg`
+    }
+  });
+
+  structuredList.push({
+    key: "total_cost",
+    params: {
+      content: `Total Cost: ${totalCost.toFixed(2)}`
+    }
+  });
+
+  structuredList.push({
+    key: "mixing_instructions",
+    params: {
+      content: mixingInstructions
+    }
+  });
 
   if (warnings.length > 0) {
     structuredList.push({
