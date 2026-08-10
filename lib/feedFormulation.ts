@@ -1,8 +1,6 @@
 // lib/feedFormulation.ts
 // Complete Poultry Feed Formulation Engine with LP Cost Optimization using yalps
 
-import yalps from 'yalps';
-
 export interface Ingredient {
   name: string;
   amountKg: number;
@@ -226,13 +224,18 @@ const NUTRITION_TARGETS: Record<string, { protein: number; calcium: number; ener
 };
 
 // ========== LP OPTIMIZATION ENGINE (using yalps) ==========
-function optimizeWithLP(
+async function optimizeWithLP(
   ingredientNames: string[],
   prices: Record<string, number>,
   targets: { protein: number; calcium: number; energy: number },
   quantityKg: number
-): Record<string, number> | null {
+): Promise<Record<string, number> | null> {
   try {
+    // Dynamically import yalps to avoid build-time issues
+    const yalpsModule = await import('yalps');
+    // Try to get the default export; fallback to named export or the module itself
+    const yalps = yalpsModule.default || yalpsModule.yalps || yalpsModule;
+
     // Build objective (cost per kg)
     const objective: Record<string, number> = {};
     for (const name of ingredientNames) {
@@ -416,7 +419,7 @@ export async function formulateFeed(params: {
   let optimizedAmounts: Record<string, number> | null = null;
   let lpSuccess = false;
   try {
-    optimizedAmounts = optimizeWithLP(allIngredientNames, adjustedPrices, nutrition, quantityKg);
+    optimizedAmounts = await optimizeWithLP(allIngredientNames, adjustedPrices, nutrition, quantityKg);
     if (optimizedAmounts) {
       lpSuccess = true;
     }
