@@ -55,7 +55,19 @@ const quantityOptions = [
   "20 kg",
   "25 kg",
   "30 kg",
+  "35 kg",
+  "40 kg",
+  "45 kg",
   "50 kg",
+  "55 kg",
+  "60 kg",
+  "65 kg",
+  "70 kg",
+  "75 kg",
+  "80 kg",
+  "85 kg",
+  "90 kg",
+  "95 kg",
   "100 kg"
 ];
 

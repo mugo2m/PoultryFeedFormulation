@@ -1,5 +1,7 @@
 // lib/feedFormulation.ts
 // Complete Poultry Feed Formulation Engine with LP Cost Optimization using yalps
+// Updated with new formulas for Chick, Grower, and Layer mashes
+// Broiler formulas remain unchanged
 
 export interface Ingredient {
   name: string;
@@ -27,16 +29,23 @@ export interface FeedResult {
 
 // ========== NUTRITIONAL COMPOSITION OF EACH INGREDIENT ==========
 const INGREDIENT_NUTRIENTS: Record<string, { protein: number; calcium: number; energy: number }> = {
+  'whole maize': { protein: 0.0823, calcium: 0.0005, energy: 3500 },
   'broken maize': { protein: 0.08, calcium: 0.0005, energy: 3500 },
   'soya bean meal': { protein: 0.45, calcium: 0.002, energy: 2400 },
-  'fish meal': { protein: 0.60, calcium: 0.05, energy: 2000 },
+  'soya meal': { protein: 0.45, calcium: 0.002, energy: 2400 },
+  'fish meal': { protein: 0.55, calcium: 0.05, energy: 2000 },
+  'fish meal / omena': { protein: 0.55, calcium: 0.05, energy: 2000 },
+  'omena': { protein: 0.55, calcium: 0.05, energy: 2000 },
   'sunflower cake': { protein: 0.35, calcium: 0.005, energy: 2000 },
   'wheat bran': { protein: 0.14, calcium: 0.001, energy: 1200 },
-  'maize bran': { protein: 0.10, calcium: 0.0005, energy: 1500 },
-  'wheat pollard': { protein: 0.15, calcium: 0.0008, energy: 1400 },
-  'cotton seed cake': { protein: 0.38, calcium: 0.0015, energy: 1800 },
+  'maize bran': { protein: 0.07, calcium: 0.0005, energy: 1500 },
+  'wheat pollard': { protein: 0.1078, calcium: 0.0008, energy: 1400 },
+  'cotton seed cake': { protein: 0.15, calcium: 0.0015, energy: 1800 },
   'lime': { protein: 0, calcium: 0.38, energy: 0 },
   'dcp': { protein: 0, calcium: 0.22, energy: 0 },
+  'chick premix': { protein: 0, calcium: 0, energy: 0 },
+  'growers premix': { protein: 0, calcium: 0, energy: 0 },
+  'layers premix': { protein: 0, calcium: 0, energy: 0 },
   'premix': { protein: 0, calcium: 0, energy: 0 },
   'methionine': { protein: 0, calcium: 0, energy: 0 },
   'lysine': { protein: 0, calcium: 0, energy: 0 },
@@ -44,13 +53,18 @@ const INGREDIENT_NUTRIENTS: Record<string, { protein: number; calcium: number; e
   'tryptophan': { protein: 0, calcium: 0, energy: 0 },
   'salt': { protein: 0, calcium: 0, energy: 0 },
   'toxin binder': { protein: 0, calcium: 0, energy: 0 },
+  'coccidiostat': { protein: 0, calcium: 0, energy: 0 },
 };
 
 // ========== DEFAULT INGREDIENT PRICES (KES per kg) ==========
 const DEFAULT_INGREDIENT_PRICES: Record<string, number> = {
+  'whole maize': 40,
   'broken maize': 40,
   'soya bean meal': 150,
+  'soya meal': 150,
   'fish meal': 200,
+  'fish meal / omena': 150,
+  'omena': 150,
   'sunflower cake': 80,
   'wheat bran': 30,
   'maize bran': 25,
@@ -58,6 +72,9 @@ const DEFAULT_INGREDIENT_PRICES: Record<string, number> = {
   'cotton seed cake': 100,
   'lime': 20,
   'dcp': 120,
+  'chick premix': 350,
+  'growers premix': 350,
+  'layers premix': 350,
   'premix': 300,
   'methionine': 600,
   'lysine': 500,
@@ -65,6 +82,7 @@ const DEFAULT_INGREDIENT_PRICES: Record<string, number> = {
   'tryptophan': 800,
   'salt': 50,
   'toxin binder': 200,
+  'coccidiostat': 1200,
 };
 
 // ========== COUNTRY PRICE MULTIPLIERS ==========
@@ -97,67 +115,80 @@ function getIngredientPrice(
   return base * multiplier;
 }
 
-// ========== FEED FORMULAS ==========
+// ========== FEED FORMULAS (UPDATED WITH YOUR RECIPES) ==========
+// All formulas are percentages that sum to exactly 100%
+//
+// Chick Starter (0–8 weeks) – Target 20–22% CP
+// Grower (8–18 weeks) – Target 16–18% CP
+// Layer (18+ weeks) – Target 16–18% CP
+// Broiler formulas remain unchanged
+
 const DUAL_PURPOSE_FORMULAS = {
+  // ===== CHICK STARTER (0–8 weeks) – 20.17% CP =====
   starter: {
-    'broken maize': 53.45,
-    'soya bean meal': 22,
-    'fish meal': 6,
-    'sunflower cake': 4,
-    'wheat bran': 0,
-    'maize bran': 3,
-    'wheat pollard': 2,
-    'cotton seed cake': 5,
-    'lime': 2.0,
-    'dcp': 1.2,
-    'premix': 0.5,
-    'methionine': 0.2,
-    'lysine': 0.12,
-    'threonine': 0.08,
-    'tryptophan': 0.05,
-    'salt': 0.3,
-    'toxin binder': 0.1,
+    'whole maize': 41.50,      // 29.0 kg / 69.87 kg * 100
+    'maize bran': 10.02,       // 7.0 kg / 69.87 kg * 100
+    'wheat pollard': 7.16,     // 5.0 kg / 69.87 kg * 100
+    'soya meal': 17.17,        // 12.0 kg / 69.87 kg * 100
+    'sunflower cake': 11.45,   // 8.0 kg / 69.87 kg * 100
+    'cotton seed cake': 2.86,  // 2.0 kg / 69.87 kg * 100
+    'fish meal / omena': 5.72, // 4.0 kg / 69.87 kg * 100
+    'lime': 2.00,              // 1.4 kg / 69.87 kg * 100
+    'dcp': 1.00,               // 0.7 kg / 69.87 kg * 100
+    'chick premix': 0.50,      // 0.35 kg / 69.87 kg * 100
+    'salt': 0.21,              // 0.15 kg / 69.87 kg * 100
+    'toxin binder': 0.14,      // 0.10 kg / 69.87 kg * 100
+    'lysine': 0.10,            // 0.07 kg / 69.87 kg * 100
+    'methionine': 0.07,        // 0.05 kg / 69.87 kg * 100
+    'threonine': 0.05,         // 0.035 kg / 69.87 kg * 100
+    'tryptophan': 0.02,        // 0.015 kg / 69.87 kg * 100
+    // Coccidiostat is optional and added separately if requested
   },
+
+  // ===== GROWER (8–18 weeks) – 16.70% CP =====
   grower: {
-    'broken maize': 59.12,
-    'soya bean meal': 19,
-    'fish meal': 4,
-    'sunflower cake': 4,
-    'wheat bran': 0,
-    'maize bran': 3,
-    'wheat pollard': 2,
-    'cotton seed cake': 5,
-    'lime': 1.8,
-    'dcp': 0.8,
-    'premix': 0.5,
-    'methionine': 0.15,
-    'lysine': 0.1,
-    'threonine': 0.08,
-    'tryptophan': 0.05,
-    'salt': 0.3,
-    'toxin binder': 0.1,
+    'whole maize': 35.38,      // 24.9 kg / 70.37 kg * 100
+    'maize bran': 17.05,       // 12.0 kg / 70.37 kg * 100
+    'wheat pollard': 14.21,    // 10.0 kg / 70.37 kg * 100
+    'soya meal': 8.67,         // 6.1 kg / 70.37 kg * 100
+    'sunflower cake': 12.79,   // 9.0 kg / 70.37 kg * 100
+    'cotton seed cake': 4.26,  // 3.0 kg / 70.37 kg * 100
+    'fish meal / omena': 3.55, // 2.5 kg / 70.37 kg * 100
+    'lime': 1.99,              // 1.4 kg / 70.37 kg * 100
+    'dcp': 0.99,               // 0.7 kg / 70.37 kg * 100
+    'growers premix': 0.50,    // 0.35 kg / 70.37 kg * 100
+    'salt': 0.21,              // 0.15 kg / 70.37 kg * 100
+    'toxin binder': 0.14,      // 0.10 kg / 70.37 kg * 100
+    'lysine': 0.10,            // 0.07 kg / 70.37 kg * 100
+    'methionine': 0.07,        // 0.05 kg / 70.37 kg * 100
+    'threonine': 0.05,         // 0.035 kg / 70.37 kg * 100
+    'tryptophan': 0.02,        // 0.015 kg / 70.37 kg * 100
+    // Coccidiostat is optional and added separately if requested
   },
+
+  // ===== LAYER (18+ weeks) – 16.93% CP, ~3.7% Calcium =====
   layer: {
-    'broken maize': 53.95,
-    'soya bean meal': 17,
-    'fish meal': 3.5,
-    'sunflower cake': 4,
-    'wheat bran': 0,
-    'maize bran': 2,
-    'wheat pollard': 3,
-    'cotton seed cake': 4,
-    'lime': 10.0,
-    'dcp': 1.2,
-    'premix': 0.5,
-    'methionine': 0.2,
-    'lysine': 0.12,
-    'threonine': 0.08,
-    'tryptophan': 0.05,
-    'salt': 0.3,
-    'toxin binder': 0.1,
+    'whole maize': 40.13,      // 28.0 kg / 69.77 kg * 100
+    'maize bran': 11.47,       // 8.0 kg / 69.77 kg * 100
+    'wheat pollard': 7.17,     // 5.0 kg / 69.77 kg * 100
+    'soya meal': 12.90,        // 9.0 kg / 69.77 kg * 100
+    'sunflower cake': 10.03,   // 7.0 kg / 69.77 kg * 100
+    'cotton seed cake': 2.87,  // 2.0 kg / 69.77 kg * 100
+    'fish meal / omena': 4.30, // 3.0 kg / 69.77 kg * 100
+    'lime': 9.32,              // 6.5 kg / 69.77 kg * 100
+    'dcp': 0.72,               // 0.5 kg / 69.77 kg * 100
+    'layers premix': 0.50,     // 0.35 kg / 69.77 kg * 100
+    'salt': 0.21,              // 0.15 kg / 69.77 kg * 100
+    'toxin binder': 0.14,      // 0.10 kg / 69.77 kg * 100
+    'lysine': 0.10,            // 0.07 kg / 69.77 kg * 100
+    'methionine': 0.07,        // 0.05 kg / 69.77 kg * 100
+    'threonine': 0.05,         // 0.035 kg / 69.77 kg * 100
+    'tryptophan': 0.02,        // 0.015 kg / 69.77 kg * 100
+    // Coccidiostat is optional and added separately if requested
   },
 };
 
+// ========== BROILER FORMULAS (UNCHANGED) ==========
 const BROILER_FORMULAS = {
   starter: {
     'broken maize': 52.65,
@@ -199,6 +230,7 @@ const BROILER_FORMULAS = {
   },
 };
 
+// ========== BREED MAPPING ==========
 const DUAL_PURPOSE_BREEDS = ['local', 'layers', 'sasso', 'kenbrew', 'kroiler', 'sussex'];
 const FORMULAS: Record<string, Record<string, Record<string, number>>> = {};
 
@@ -217,9 +249,9 @@ FORMULAS['broiler'] = {
 
 // ========== NUTRITIONAL TARGETS ==========
 const NUTRITION_TARGETS: Record<string, { protein: number; calcium: number; energy: number }> = {
-  'starter': { protein: 19, calcium: 1.0, energy: 2800 },
-  'grower': { protein: 16.5, calcium: 0.9, energy: 2700 },
-  'layer': { protein: 16.5, calcium: 3.8, energy: 2750 },
+  'starter': { protein: 20.17, calcium: 1.0, energy: 2800 },
+  'grower': { protein: 16.70, calcium: 0.9, energy: 2700 },
+  'layer': { protein: 16.93, calcium: 3.8, energy: 2750 },
   'finisher': { protein: 20, calcium: 0.7, energy: 2900 },
 };
 
@@ -244,9 +276,13 @@ async function optimizeWithLP(
 
     // Define max limits for each ingredient
     const MAX_LIMITS: Record<string, number> = {
+      'whole maize': 100,
       'broken maize': 100,
       'soya bean meal': 50,
+      'soya meal': 50,
       'fish meal': 25,
+      'fish meal / omena': 25,
+      'omena': 25,
       'sunflower cake': 40,
       'wheat bran': 25,
       'maize bran': 25,
@@ -255,12 +291,16 @@ async function optimizeWithLP(
       'lime': 20,
       'dcp': 10,
       'premix': 2,
+      'chick premix': 2,
+      'growers premix': 2,
+      'layers premix': 2,
       'methionine': 0.5,
       'lysine': 0.5,
       'threonine': 0.5,
       'tryptophan': 0.5,
       'salt': 1.5,
       'toxin binder': 0.5,
+      'coccidiostat': 0.1,
     };
 
     // Build variables array
@@ -477,17 +517,19 @@ export async function formulateFeed(params: {
     warnings.push("⚠️ Withdraw coccidiostat 5–7 days before slaughter.");
   }
 
-  const baseMixing = "For best results, first pre-mix all minerals (lime, dcp, salt, premix, methionine, lysine, threonine, tryptophan, and toxin binder) with 3 kg of maize bran, wheat bran, or maize germ. Mix thoroughly to ensure even distribution. Then combine this mineral premix with the remaining ingredients. Grind maize and soya meal to a fine powder before final mixing.";
+  const baseMixing = "For best results, first pre-mix all minerals and micro-ingredients (lime, DCP, salt, premix, methionine, lysine, threonine, tryptophan, and toxin binder) with approximately 3 kg of maize bran, wheat bran, or another suitable carrier. Mix thoroughly to ensure even distribution. Then combine this premix with the remaining ingredients. Grind maize and protein ingredients appropriately before final mixing.";
 
   let mixingInstructions = baseMixing;
   if (stageKey === 'starter') {
-    mixingInstructions += " Starter feed should be crumbled or mashed for young chicks.";
+    mixingInstructions += " Starter feed should be finely ground, mashed, or appropriately crumbled for young chicks.";
+  } else if (stageKey === 'grower') {
+    mixingInstructions += " Grower feed should be mixed uniformly and supplied according to the birds' age, body weight, and production objective.";
   } else if (stageKey === 'layer') {
-    mixingInstructions += " For layers, ensure calcium is evenly distributed to prevent shell defects.";
+    mixingInstructions += " For layers, ensure calcium is evenly distributed throughout the feed to support shell quality.";
   } else if (stageKey === 'finisher') {
-    mixingInstructions += " For broiler finisher, mix with a little vegetable oil to reduce dust and increase energy.";
+    mixingInstructions += " For broiler finisher, maintain adequate dietary energy and follow the feed additive manufacturer's withdrawal instructions.";
   }
-  mixingInstructions += " Designed by Mugo to assist farmers globally.";
+  mixingInstructions += " Store finished feed in a dry, cool place and use promptly. Designed by Mugo to assist farmers globally.";
 
   const ingredientLines = finalIngredients.map(ing => {
     const avail = ing.available ? ' (you have some)' : '';
@@ -526,6 +568,7 @@ export async function formulateFeed(params: {
     }
   });
 
+  // Use the fixed nutritional targets (already calculated from your recipes)
   structuredList.push({
     key: "nutritional_info",
     params: {
