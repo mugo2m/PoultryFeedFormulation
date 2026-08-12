@@ -96,64 +96,94 @@ const Agent = ({
           };
         }
 
-        // 2. nutritional_info → enhanced with targets
+        // 2. nutritional_info → enhanced with targets from backend
         if (item.key === 'nutritional_info') {
           const nutritionData = sessionData?.feedResult?.nutritionalSummary;
           let actualProtein = nutritionData?.protein || 0;
           let actualCalcium = nutritionData?.calcium || 0;
           let actualEnergy = nutritionData?.energy || 0;
 
-          // Fallback: parse from original content if nutritionData missing
-          if (!nutritionData) {
+          // ===== GET TARGETS FROM BACKEND (NOT HARDCODED) =====
+          // The backend sends the nutritionalSummary with both actual and target values
+          // If nutritionData contains target values, use them; otherwise fallback to defaults
+          let targetProtein = nutritionData?.targetProtein || 0;
+          let targetCalcium = nutritionData?.targetCalcium || 0;
+          let targetEnergy = nutritionData?.targetEnergy || 0;
+
+          // If the backend didn't send target values, try to parse from the content or use defaults
+          if (targetProtein === 0) {
             const content = item.params?.content || '';
-            const proteinMatch = content.match(/Protein\s*~([\d.]+)/);
-            const calciumMatch = content.match(/Calcium\s*~([\d.]+)/);
-            const energyMatch = content.match(/Energy\s*~([\d.]+)/);
-            actualProtein = proteinMatch ? parseFloat(proteinMatch[1]) : 0;
-            actualCalcium = calciumMatch ? parseFloat(calciumMatch[1]) : 0;
-            actualEnergy = energyMatch ? parseFloat(energyMatch[1]) : 0;
+            const targetMatch = content.match(/Target:\s*([\d.]+)%/);
+            if (targetMatch) {
+              targetProtein = parseFloat(targetMatch[1]);
+            } else {
+              // Fallback: use stage-based defaults (but these should match your backend)
+              const stageKey = sessionData?.stage?.toLowerCase().includes('starter') ? 'starter' :
+                               sessionData?.stage?.toLowerCase().includes('grower') ? 'grower' :
+                               sessionData?.stage?.toLowerCase().includes('layer') ? 'layer' :
+                               sessionData?.stage?.toLowerCase().includes('finisher') ? 'finisher' : 'starter';
+              const defaults = {
+                starter: { protein: 20.17, calcium: 1.0, energy: 2800 },
+                grower: { protein: 16.7, calcium: 0.9, energy: 2700 },
+                layer: { protein: 16.93, calcium: 3.8, energy: 2750 },
+                finisher: { protein: 20, calcium: 0.7, energy: 2900 }
+              };
+              const def = defaults[stageKey as keyof typeof defaults] || defaults.starter;
+              targetProtein = def.protein;
+              targetCalcium = def.calcium;
+              targetEnergy = def.energy;
+            }
           }
 
-          // Define targets based on stage
-          const targets: Record<string, { protein: number; calcium: number; energy: number }> = {
-            starter: { protein: 19, calcium: 1.0, energy: 2800 },
-            grower: { protein: 16.5, calcium: 0.9, energy: 2700 },
-            layer: { protein: 16.5, calcium: 3.8, energy: 2750 },
-            finisher: { protein: 20, calcium: 0.7, energy: 2900 }
-          };
-
-          const stageKey = sessionData?.stage?.toLowerCase().includes('starter') ? 'starter' :
-                           sessionData?.stage?.toLowerCase().includes('grower') ? 'grower' :
-                           sessionData?.stage?.toLowerCase().includes('layer') ? 'layer' :
-                           sessionData?.stage?.toLowerCase().includes('finisher') ? 'finisher' : 'starter';
-
-          const target = targets[stageKey as keyof typeof targets] || targets.starter;
+          // If calcium target is missing, use default
+          if (targetCalcium === 0) {
+            const stageKey = sessionData?.stage?.toLowerCase().includes('starter') ? 'starter' :
+                             sessionData?.stage?.toLowerCase().includes('grower') ? 'grower' :
+                             sessionData?.stage?.toLowerCase().includes('layer') ? 'layer' :
+                             sessionData?.stage?.toLowerCase().includes('finisher') ? 'finisher' : 'starter';
+            const defaults = {
+              starter: { calcium: 1.0, energy: 2800 },
+              grower: { calcium: 0.9, energy: 2700 },
+              layer: { calcium: 3.8, energy: 2750 },
+              finisher: { calcium: 0.7, energy: 2900 }
+            };
+            const def = defaults[stageKey as keyof typeof defaults] || defaults.starter;
+            targetCalcium = def.calcium;
+            targetEnergy = def.energy;
+          }
 
           // Check if targets are met (within 5% tolerance)
           const tolerance = 0.05;
-          const isProteinMet = target.protein > 0 ? Math.abs(actualProtein - target.protein) / target.protein < tolerance : false;
-          const isCalciumMet = target.calcium > 0 ? Math.abs(actualCalcium - target.calcium) / target.calcium < tolerance : false;
-          const isEnergyMet = target.energy > 0 ? Math.abs(actualEnergy - target.energy) / target.energy < tolerance : false;
+          const isProteinMet = targetProtein > 0 ? Math.abs(actualProtein - targetProtein) / targetProtein < tolerance : false;
+          const isCalciumMet = targetCalcium > 0 ? Math.abs(actualCalcium - targetCalcium) / targetCalcium < tolerance : false;
+          const isEnergyMet = targetEnergy > 0 ? Math.abs(actualEnergy - targetEnergy) / targetEnergy < tolerance : false;
           const allMet = isProteinMet && isCalciumMet && isEnergyMet;
 
           // Build bullet points (with ✅/❌)
           let bulletLines: string[] = [];
-          bulletLines.push(`- Protein: ${actualProtein}% (Target: ${target.protein}%) ${isProteinMet ? '✅' : '❌'}`);
-          bulletLines.push(`- Calcium: ${actualCalcium}% (Target: ${target.calcium}%) ${isCalciumMet ? '✅' : '❌'}`);
-          bulletLines.push(`- Energy: ${actualEnergy} kcal/kg (Target: ${target.energy} kcal/kg) ${isEnergyMet ? '✅' : '❌'}`);
+          bulletLines.push(`- Protein: ${actualProtein.toFixed(2)}% (Target: ${targetProtein}%) ${isProteinMet ? '✅' : '❌'}`);
+          bulletLines.push(`- Calcium: ${actualCalcium.toFixed(2)}% (Target: ${targetCalcium}%) ${isCalciumMet ? '✅' : '❌'}`);
+          bulletLines.push(`- Energy: ${actualEnergy.toFixed(0)} kcal/kg (Target: ${targetEnergy} kcal/kg) ${isEnergyMet ? '✅' : '❌'}`);
 
+          // ===== CORRECTED ADVICE GENERATION =====
           let adviceLines: string[] = [];
           if (!isProteinMet) {
-            const diff = (target.protein - actualProtein).toFixed(1);
-            adviceLines.push(`  - Protein is ${diff}% too low - Add more soya bean meal or fish meal`);
+            const diff = actualProtein - targetProtein;
+            const absDiff = Math.abs(diff).toFixed(1);
+            const direction = diff > 0 ? 'high' : 'low';
+            adviceLines.push(`  - Protein is ${absDiff}% too ${direction} - ${direction === 'high' ? 'Reduce protein sources (soya, fish, sunflower, cotton seed)' : 'Add more protein sources (soya bean meal or fish meal)'}`);
           }
           if (!isCalciumMet) {
-            const diff = (target.calcium - actualCalcium).toFixed(1);
-            adviceLines.push(`  - Calcium is ${diff}% too low - Increase lime or dcp`);
+            const diff = actualCalcium - targetCalcium;
+            const absDiff = Math.abs(diff).toFixed(1);
+            const direction = diff > 0 ? 'high' : 'low';
+            adviceLines.push(`  - Calcium is ${absDiff}% too ${direction} - ${direction === 'high' ? 'Reduce lime or dcp' : 'Increase lime or dcp'}`);
           }
           if (!isEnergyMet) {
-            const diff = (target.energy - actualEnergy).toFixed(0);
-            adviceLines.push(`  - Energy is ${diff} kcal/kg too low - Add more maize or vegetable oil`);
+            const diff = actualEnergy - targetEnergy;
+            const absDiff = Math.abs(diff).toFixed(0);
+            const direction = diff > 0 ? 'high' : 'low';
+            adviceLines.push(`  - Energy is ${absDiff} kcal/kg too ${direction} - ${direction === 'high' ? 'Reduce high-energy ingredients (maize, oil)' : 'Add more maize or vegetable oil'}`);
           }
 
           let summaryLine = allMet
@@ -752,7 +782,6 @@ const Agent = ({
     else if (item.key === 'mixing_instructions') { icon = <AlertCircle className="w-5 h-5" />; title = safeT('mixing_instructions_title', 'Mixing Instructions'); }
     else if (item.key === 'safety_warnings') { icon = <Shield className="w-5 h-5" />; title = safeT('safety_warnings_title', 'Safety Warnings'); }
     else if (item.key === 'voice_script') { icon = <Volume2 className="w-5 h-5" />; title = safeT('voice_summary_title', 'Voice Summary'); }
-    // ===== ADDED: optimization_status =====
     else if (item.key === 'optimization_status') { icon = <Sparkles className="w-5 h-5" />; title = safeT('optimization_status_title', 'Optimization Status'); }
     else { icon = <Sparkles className="w-5 h-5" />; title = item.key; }
 
