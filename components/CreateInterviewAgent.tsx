@@ -92,7 +92,7 @@ const ingredientOptions = [
   "Toxin binder"
 ];
 
-// ========== COUNTRY LIST – all nations speaking English, French, Spanish, or Kiswahili ==========
+// ========== COUNTRY LIST ==========
 const countryOptions = [
   "Algeria",
   "Antigua and Barbuda",
@@ -227,6 +227,8 @@ const CreateInterviewAgent = ({
   const [selectedCountryCode, setSelectedCountryCode] = useState("+254");
   const [recognitionLanguage, setRecognitionLanguage] = useState('en-US');
   const nameUsageCountRef = useRef(0);
+  // ===== FIX: Prevent repeated voice ready toast =====
+  const voiceReadyToastShownRef = useRef(false);
 
   const getSpokenCurrencyName = (): string => currency.name;
   const getDisplaySymbol = (): string => currency.symbol;
@@ -494,18 +496,22 @@ const CreateInterviewAgent = ({
     };
   }, [recognitionLanguage, safeT]);
 
-  // ========== VOICE ASSISTANT REF ==========
+  // ========== VOICE ASSISTANT REF (FIXED) ==========
   useEffect(() => {
     let isMounted = true;
 
     if (!voiceEnabled) {
       voiceAssistantRef.current = null;
+      voiceReadyToastShownRef.current = false; // Reset so toast can be shown again when re-enabled
       return;
     }
 
     voiceAssistantRef.current = { speak: async (text: string) => streamQuestionWithVoice(text) };
-    if (isMounted && voiceEnabled) {
+
+    // Show toast only once per voice enable session
+    if (isMounted && voiceEnabled && !voiceReadyToastShownRef.current) {
       toast.success(safeT('voice_ready'));
+      voiceReadyToastShownRef.current = true;
     }
 
     return () => {

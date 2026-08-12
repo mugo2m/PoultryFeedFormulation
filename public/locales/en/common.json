@@ -232,6 +232,131 @@
   "yams": "Yams"
 },
   "ask_anything_title": "Ask Anything About Your Farm",
+
+
+  "question_country": "What country are you in?",
+  "question_breed": "What breed of poultry are you raising?",
+  "question_stage": "What stage are your birds at?",
+  "question_quantity": "How many kilograms of feed do you want to produce?",
+  "question_coccidiostat": "Do you want to include coccidiostat?",
+  "question_available_ingredients": "Which ingredients do you already have available? (Select all that apply)",
+  "question_ingredient_prices": "Enter the price per kg for each ingredient (leave blank if unknown)",
+  "question_county": "What county / region are you in?",
+  "question_sub_county": "Which sub-county / district?",
+  "question_ward": "Which ward?",
+  "question_village": "Which village?",
+  "question_x_of_y": "Question {{current}} of {{total}}",
+
+
+  "ack_country": "Country set to {{answer}}.",
+  "ack_breed": "Breed set to {{answer}}.",
+  "ack_stage": "Stage set to {{answer}}.",
+  "ack_quantity": "Quantity set to {{answer}}.",
+  "ack_coccidiostat": "Coccidiostat set to {{answer}}.",
+  "ack_ingredients": "Available ingredients: {{answer}}.",
+  "ack_prices": "Prices recorded.",
+
+  "ack_sub_county": "Sub-county set to {{answer}}.",
+  "ack_ward": "Ward set to {{answer}}.",
+  "ack_village": "Village set to {{answer}}.",
+  "ack_generic": "You answered: {{answer}}.",
+  "recorded": "Recorded!",
+
+
+  "section_location": "📍 Location",
+  "section_breed": "🐔 Breed",
+  "section_stage": "📊 Stage",
+  "section_quantity": "⚖️ Quantity",
+  "section_coccidiostat": "💊 Coccidiostat",
+  "section_ingredients": "🧪 Ingredients",
+  "section_prices": "💰 Prices",
+
+
+  "select_option": "-- Select an option --",
+  "type_answer": "Type your answer...",
+  "submit_answer": "Submit",
+  "skip": "Skip",
+  "your_answer": "Your answer",
+  "voice_confirmation_sent": "Voice confirmation sent",
+  "listening_speak_now": "🎤 Listening... speak now!",
+  "confirm_selection": "Confirm Selection",
+  "confirm_prices": "Confirm Prices",
+  "select_at_least_one": "Please select at least one ingredient.",
+
+
+  "voice_on": "Voice ON",
+  "voice_off": "Voice OFF",
+  "voice_ready": "🎤 Voice assistant ready!",
+  "enable_voice_first": "Please turn Voice ON first.",
+  "no_speech_detected": "No speech detected ({{current}}/{{max}}).",
+  "speaking": "Speaking",
+  "words": "words",
+  "speaking_dots": "Speaking...",
+  "ready_for_answer": "🎤 Listening for your answer...",
+
+
+  "start_setup": "Start Setup",
+  "loading": "Loading...",
+  "stop_setup": "Stop Setup",
+  "skipped": "Skipped!",
+  "creating_profile": "Creating your feed profile...",
+  "ready_redirect": "Redirecting you now!",
+  "error_creating_profile": "Failed to create feed plan. Please try again.",
+  "request_timeout": "Request timed out. Please try again.",
+
+
+  "enter_all_prices": "Please enter a price for each ingredient.",
+  "enter_price_placeholder": "Price per kg",
+
+
+  "coccidiostat_not_allowed_layer": "⚠️ Coccidiostat is NOT allowed for laying hens.",
+  "coccidiostat_layer_warning": "It has been removed from this formula for layer feed.",
+  "forced_coccidiostat_no": "Coccidiostat set to 'No' for layer feed.",
+
+
+  "feed_summary_title": "Feed Summary",
+  "ingredient_list_title": "Ingredients",
+  "nutritional_info_title": "Nutritional Summary",
+  "total_cost_title": "Total Cost",
+  "mixing_instructions_title": "Mixing Instructions",
+  "safety_warnings_title": "Safety Warnings",
+  "optimization_status_title": "Optimization Status",
+
+
+  "farmer": "Farmer",
+  "smart_farmer_building": "Smart Farmer AI - Building your feed formula",
+  "ask_questions": "Ask Questions",
+  "hear_recommendations": "Hear Recommendations",
+  "custom_feed_formula": "Custom Feed Formula",
+  "feed_business_tip": "Business Tip: Mix accurately to avoid waste and maximize growth.",
+  "feed_disclaimer": "Store feed in a dry, cool place and use within 2 weeks.",
+  "location_info": "Location",
+  "smart_farmer_here": "🎙️ Smart Farmer AI is here!",
+  "voice_service_failed": "Failed to initialize voice service.",
+  "failed_to_start": "Failed to start: {{message}}",
+  "ready_ask_away": "Ready! You can ask questions about your feed formula.",
+  "feedback_saved": "Comment saved successfully!",
+  "feedback_failed": "Failed to save comment. Please try again.",
+  "farmers_comments": "Farmers Comments / Suggestions",
+  "write_suggestion_placeholder": "Write your suggestion to improve the content...",
+  "submit_farmers_comment": "Submit Farmers Comment",
+  "submitting": "Submitting...",
+  "thanks_for_feedback": "Thank you! Your comment helps us improve.",
+  "voice_summary_title": "Voice Summary",
+  "voice_summary_ready": "📢 Full formula summary spoken above",
+  "prepared_feed_recommendations": "I've prepared your custom poultry feed formula.",
+  "feed_summary": "Feed formula for {{breed}} {{stage}} – {{quantity}} kg batch",
+  "post_feed_recommendations": "That's your feed formula. Ask me more about poultry management.",
+
+
+
+
+
+
+
+
+
+
 "ask_anything_description": "Get instant answers on crops, pests, weather, and markets – 24/7 in your language.",
 "start_session": "Start Session",
 "farm_sessions": "Farm Sessions",
