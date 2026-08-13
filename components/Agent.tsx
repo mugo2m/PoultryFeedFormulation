@@ -27,6 +27,7 @@ import {
   CheckCircle,
   List,
   ClipboardList,
+  Calendar, // Added for weekly_feed_plan
 } from "lucide-react";
 import { useCurrency } from '@/lib/context/CurrencyContext';
 
@@ -51,6 +52,9 @@ const Agent = ({
   const { t, ready, i18n } = useOfflineTranslation();
   const { currency } = useCurrency();
 
+  console.log("🔍 [Agent] Component mounted with sessionData:", sessionData);
+  console.log("🔍 [Agent] sessionData.structuredList length:", sessionData?.structuredList?.length);
+
   const getDisplaySymbol = (): string => currency.symbol || 'Ksh';
 
   const getSpokenCurrencyName = (): string => {
@@ -72,9 +76,48 @@ const Agent = ({
     }
   }, [sessionData, i18n]);
 
+  // ===== GET CORRECT NUTRITIONAL TARGETS BASED ON BREED AND STAGE =====
+  const getNutritionalTargets = (breed: string, stage: string): { protein: number; calcium: number; energy: number } => {
+    const breedKey = breed?.toLowerCase().trim() || '';
+    const stageKey = stage?.toLowerCase().includes('starter') ? 'starter' :
+                     stage?.toLowerCase().includes('grower') ? 'grower' :
+                     stage?.toLowerCase().includes('layer') ? 'layer' :
+                     stage?.toLowerCase().includes('finisher') ? 'finisher' : 'starter';
+
+    console.log("🎯 [getNutritionalTargets] breedKey:", breedKey, "stageKey:", stageKey);
+
+    // Broiler targets
+    if (breedKey === 'broiler') {
+      if (stageKey === 'starter') {
+        return { protein: 22.0, calcium: 0.9, energy: 2900 };
+      } else if (stageKey === 'finisher') {
+        return { protein: 20.0, calcium: 0.8, energy: 2950 };
+      } else {
+        return { protein: 20.0, calcium: 0.8, energy: 2950 }; // fallback to finisher
+      }
+    }
+
+    // Dual-purpose (Sasso, local, layers, etc.)
+    if (stageKey === 'starter') {
+      return { protein: 20.15, calcium: 1.0, energy: 2800 };
+    } else if (stageKey === 'grower') {
+      return { protein: 16.7, calcium: 0.9, energy: 2700 };
+    } else if (stageKey === 'layer') {
+      return { protein: 17.04, calcium: 3.8, energy: 2750 };
+    } else {
+      return { protein: 16.7, calcium: 0.9, energy: 2700 }; // fallback grower
+    }
+  };
+
   // ===== TRANSFORM structuredList: ingredient_table → bullet list, nutritional_info → enhanced =====
   useEffect(() => {
     if (sessionData?.structuredList) {
+      console.log("📋 [useEffect] Starting transformation of structuredList");
+      console.log("📋 [useEffect] Original structuredList keys:", sessionData.structuredList.map((item: any) => item.key));
+
+      const breed = sessionData?.breed || '';
+      const stage = sessionData?.stage || '';
+
       const transformed = sessionData.structuredList.map((item: any) => {
         // 1. ingredient_table → bullet list
         if (item.key === 'ingredient_table') {
@@ -103,69 +146,32 @@ const Agent = ({
           let actualCalcium = nutritionData?.calcium || 0;
           let actualEnergy = nutritionData?.energy || 0;
 
-          // ===== GET TARGETS FROM BACKEND (NOT HARDCODED) =====
-          // The backend sends the nutritionalSummary with both actual and target values
-          // If nutritionData contains target values, use them; otherwise fallback to defaults
-          let targetProtein = nutritionData?.targetProtein || 0;
-          let targetCalcium = nutritionData?.targetCalcium || 0;
-          let targetEnergy = nutritionData?.targetEnergy || 0;
+          const targets = getNutritionalTargets(breed, stage);
+          let targetProtein = targets.protein;
+          let targetCalcium = targets.calcium;
+          let targetEnergy = targets.energy;
 
-          // If the backend didn't send target values, try to parse from the content or use defaults
-          if (targetProtein === 0) {
-            const content = item.params?.content || '';
-            const targetMatch = content.match(/Target:\s*([\d.]+)%/);
-            if (targetMatch) {
-              targetProtein = parseFloat(targetMatch[1]);
-            } else {
-              // Fallback: use stage-based defaults (but these should match your backend)
-              const stageKey = sessionData?.stage?.toLowerCase().includes('starter') ? 'starter' :
-                               sessionData?.stage?.toLowerCase().includes('grower') ? 'grower' :
-                               sessionData?.stage?.toLowerCase().includes('layer') ? 'layer' :
-                               sessionData?.stage?.toLowerCase().includes('finisher') ? 'finisher' : 'starter';
-              const defaults = {
-                starter: { protein: 20.17, calcium: 1.0, energy: 2800 },
-                grower: { protein: 16.7, calcium: 0.9, energy: 2700 },
-                layer: { protein: 16.93, calcium: 3.8, energy: 2750 },
-                finisher: { protein: 20, calcium: 0.7, energy: 2900 }
-              };
-              const def = defaults[stageKey as keyof typeof defaults] || defaults.starter;
-              targetProtein = def.protein;
-              targetCalcium = def.calcium;
-              targetEnergy = def.energy;
-            }
+          if (nutritionData?.targetProtein) {
+            targetProtein = nutritionData.targetProtein;
+          }
+          if (nutritionData?.targetCalcium) {
+            targetCalcium = nutritionData.targetCalcium;
+          }
+          if (nutritionData?.targetEnergy) {
+            targetEnergy = nutritionData.targetEnergy;
           }
 
-          // If calcium target is missing, use default
-          if (targetCalcium === 0) {
-            const stageKey = sessionData?.stage?.toLowerCase().includes('starter') ? 'starter' :
-                             sessionData?.stage?.toLowerCase().includes('grower') ? 'grower' :
-                             sessionData?.stage?.toLowerCase().includes('layer') ? 'layer' :
-                             sessionData?.stage?.toLowerCase().includes('finisher') ? 'finisher' : 'starter';
-            const defaults = {
-              starter: { calcium: 1.0, energy: 2800 },
-              grower: { calcium: 0.9, energy: 2700 },
-              layer: { calcium: 3.8, energy: 2750 },
-              finisher: { calcium: 0.7, energy: 2900 }
-            };
-            const def = defaults[stageKey as keyof typeof defaults] || defaults.starter;
-            targetCalcium = def.calcium;
-            targetEnergy = def.energy;
-          }
-
-          // Check if targets are met (within 5% tolerance)
           const tolerance = 0.05;
           const isProteinMet = targetProtein > 0 ? Math.abs(actualProtein - targetProtein) / targetProtein < tolerance : false;
           const isCalciumMet = targetCalcium > 0 ? Math.abs(actualCalcium - targetCalcium) / targetCalcium < tolerance : false;
           const isEnergyMet = targetEnergy > 0 ? Math.abs(actualEnergy - targetEnergy) / targetEnergy < tolerance : false;
           const allMet = isProteinMet && isCalciumMet && isEnergyMet;
 
-          // Build bullet points (with ✅/❌)
           let bulletLines: string[] = [];
           bulletLines.push(`- Protein: ${actualProtein.toFixed(2)}% (Target: ${targetProtein}%) ${isProteinMet ? '✅' : '❌'}`);
           bulletLines.push(`- Calcium: ${actualCalcium.toFixed(2)}% (Target: ${targetCalcium}%) ${isCalciumMet ? '✅' : '❌'}`);
           bulletLines.push(`- Energy: ${actualEnergy.toFixed(0)} kcal/kg (Target: ${targetEnergy} kcal/kg) ${isEnergyMet ? '✅' : '❌'}`);
 
-          // ===== CORRECTED ADVICE GENERATION =====
           let adviceLines: string[] = [];
           if (!isProteinMet) {
             const diff = actualProtein - targetProtein;
@@ -203,8 +209,15 @@ const Agent = ({
           };
         }
 
+        // For any other keys, leave unchanged
         return item;
       });
+
+      console.log("📋 [useEffect] Transformed structuredList keys:", transformed.map((item: any) => item.key));
+      // Specifically check if weekly_feed_plan exists
+      const hasWeeklyPlan = transformed.some((item: any) => item.key === 'weekly_feed_plan');
+      console.log("📋 [useEffect] weekly_feed_plan exists in transformed?", hasWeeklyPlan);
+
       setStructuredList(transformed);
     }
     if (sessionData?.structuredFinancialAdvice) {
@@ -509,6 +522,7 @@ const Agent = ({
 
   // ========== STREAMING KARAOKE ==========
   const streamRecommendationKaraoke = async (rawRecommendation: string, index: number) => {
+    console.log(`🎤 [Karaoke] Starting stream for index ${index}, key: ${structuredList[index]?.key}`);
     if (!voiceEnabled || !window.speechSynthesis) return;
 
     if (window.speechSynthesis.speaking) {
@@ -600,6 +614,7 @@ const Agent = ({
   const streamAllRecommendations = async () => {
     if (structuredList.length === 0 || recommendationsSpoken) return;
 
+    console.log("🔊 [streamAllRecommendations] Starting, structuredList keys:", structuredList.map(item => item.key));
     setRecommendationsSpoken(true);
     nameUsageCountRef.current = 0;
 
@@ -743,6 +758,7 @@ const Agent = ({
 
   // ========== RENDER FEED RECOMMENDATION TEXT ==========
   const renderRecommendationText = (item: StructuredItem, idx: number) => {
+    console.log(`🎨 [renderRecommendationText] Rendering item ${idx}, key: ${item.key}`);
     let displayContent = '';
     if (item.params?.content) {
       displayContent = item.params.content;
@@ -783,6 +799,11 @@ const Agent = ({
     else if (item.key === 'safety_warnings') { icon = <Shield className="w-5 h-5" />; title = safeT('safety_warnings_title', 'Safety Warnings'); }
     else if (item.key === 'voice_script') { icon = <Volume2 className="w-5 h-5" />; title = safeT('voice_summary_title', 'Voice Summary'); }
     else if (item.key === 'optimization_status') { icon = <Sparkles className="w-5 h-5" />; title = safeT('optimization_status_title', 'Optimization Status'); }
+    else if (item.key === 'weekly_feed_plan') {
+      console.log("📅 [renderRecommendationText] Rendering weekly_feed_plan with content:", displayContent);
+      icon = <Calendar className="w-5 h-5" />;
+      title = safeT('weekly_feed_plan_title', 'Weekly Feed Plan & Financial Summary');
+    }
     else { icon = <Sparkles className="w-5 h-5" />; title = item.key; }
 
     // Skip rendering voice_script as visual – it's only for voice
@@ -996,7 +1017,10 @@ const Agent = ({
             </p>
           </div>
           <div className="space-y-4">
-            {structuredList.map((item, idx) => renderRecommendationText(item, idx))}
+            {structuredList.map((item, idx) => {
+              console.log(`🖼️ [Render] Rendering item ${idx}, key: ${item.key}`);
+              return renderRecommendationText(item, idx);
+            })}
           </div>
           <div className="mt-4 text-center text-sm text-gray-500">
             {safeT('feed_disclaimer', 'Store feed in a dry, cool place and use within 2 weeks.')}

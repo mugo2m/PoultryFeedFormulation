@@ -20,10 +20,12 @@ const cache = new Map();
 const CACHE_TTL = 10 * 60 * 1000;
 
 function getCacheKey(inputs: any): string {
-  const { breed, stage, quantityKg, includeCoccidiostat, country, ingredientPrices, availableIngredients } = inputs;
+  const { breed, stage, quantityKg, includeCoccidiostat, country, ingredientPrices, availableIngredients, numberOfBirds, salePricePerBird, pricePerEgg } = inputs;
   const priceString = ingredientPrices ? JSON.stringify(ingredientPrices) : '';
   const availString = availableIngredients ? JSON.stringify(availableIngredients) : '';
-  return JSON.stringify({ breed, stage, quantityKg, includeCoccidiostat, country, priceString, availString });
+  const key = JSON.stringify({ breed, stage, quantityKg, includeCoccidiostat, country, priceString, availString, numberOfBirds, salePricePerBird, pricePerEgg });
+  console.log(`🔑 [getCacheKey] Generated key: ${key}`);
+  return key;
 }
 
 // ========== CURRENCY HELPERS ==========
@@ -53,6 +55,8 @@ export async function POST(request: NextRequest) {
   try {
     console.log("🐔 Poultry Feed Formulation API called");
     const body = await request.json();
+    console.log("📥 [POST] Request body received:", JSON.stringify(body, null, 2));
+
     const cookieLanguage = request.cookies.get('preferred-language')?.value;
     const bodyLanguage = body.language;
     const userLanguage = bodyLanguage || cookieLanguage || 'en';
@@ -72,7 +76,15 @@ export async function POST(request: NextRequest) {
       farmerName,
       ingredientPrices,
       availableIngredients = [],
+      // NEW FIELDS
+      numberOfBirds = 0,
+      salePricePerBird = 0,
+      pricePerEgg = 0,
     } = body;
+
+    console.log(`🔢 [POST] Extracted numberOfBirds: ${numberOfBirds} (type: ${typeof numberOfBirds})`);
+    console.log(`🔢 [POST] Extracted salePricePerBird: ${salePricePerBird}`);
+    console.log(`🔢 [POST] Extracted pricePerEgg: ${pricePerEgg}`);
 
     if (!breed || !stage || !quantityKg || !country || !userid) {
       console.error("Missing required fields:", { breed, stage, quantityKg, country, userid });
@@ -90,7 +102,10 @@ export async function POST(request: NextRequest) {
       includeCoccidiostat,
       country: normalizedCountry,
       ingredientPrices,
-      availableIngredients
+      availableIngredients,
+      numberOfBirds,
+      salePricePerBird,
+      pricePerEgg,
     });
 
     let feedResult: any = null;
@@ -100,6 +115,7 @@ export async function POST(request: NextRequest) {
         console.log("✅ Using cached feed formulation");
         feedResult = cached.data;
       } else {
+        console.log("⏰ Cache expired, deleting...");
         cache.delete(cacheKey);
       }
     }
@@ -107,24 +123,31 @@ export async function POST(request: NextRequest) {
     if (!feedResult) {
       console.log("📋 Calculating fresh feed formulation...");
       try {
+        const formulateParams = {
+          breed,
+          stage,
+          quantityKg: parseFloat(quantityKg),
+          includeCoccidiostat: includeCoccidiostat === "Yes" || includeCoccidiostat === true,
+          country: normalizedCountry,
+          ingredientPrices: ingredientPrices || {},
+          availableIngredients: availableIngredients || [],
+          numberOfBirds: parseFloat(numberOfBirds) || 0,
+          salePricePerBird: parseFloat(salePricePerBird) || 0,
+          pricePerEgg: parseFloat(pricePerEgg) || 0,
+        };
+        console.log("📤 [POST] Calling formulateFeed with params:", JSON.stringify(formulateParams, null, 2));
+
         feedResult = await withTimeout(
           (async () => {
-            const result = await formulateFeed({
-              breed,
-              stage,
-              quantityKg: parseFloat(quantityKg),
-              includeCoccidiostat: includeCoccidiostat === "Yes" || includeCoccidiostat === true,
-              country: normalizedCountry,
-              ingredientPrices: ingredientPrices || {},
-              availableIngredients: availableIngredients || [],
-            });
+            const result = await formulateFeed(formulateParams);
+            console.log("✅ [POST] formulateFeed returned result. structuredList keys:", result.structuredList.map(item => item.key));
             return result;
           })(),
           30000,
           "Feed formulation timed out after 30 seconds"
         );
         cache.set(cacheKey, { data: feedResult, timestamp: Date.now() });
-        console.log("✅ Feed formulation completed");
+        console.log("✅ Feed formulation completed and cached");
       } catch (error: any) {
         console.error("❌ Error formulating feed:", error);
         throw new Error(`Formulation error: ${error.message}`);
@@ -135,6 +158,8 @@ export async function POST(request: NextRequest) {
     const ingredients = feedResult.ingredients || [];
     const totalCost = feedResult.totalCost || 0;
     const nutrition = feedResult.nutritionalSummary || { protein: 0, calcium: 0, energy: 0 };
+
+    console.log(`📊 [POST] Building ingredient table with ${ingredients.length} ingredients`);
 
     const tableRows = ingredients.map((ing: any) => {
       const qty = ing.amountKg.toFixed(2);
@@ -183,6 +208,7 @@ export async function POST(request: NextRequest) {
 `;
 
     // ========== BUILD NEW STRUCTURED LIST ==========
+    console.log("🔄 [POST] Building new structured list from feedResult.structuredList");
     const newStructuredList: any[] = [];
     for (const item of feedResult.structuredList) {
       if (item.key === 'ingredient_list') {
@@ -190,13 +216,17 @@ export async function POST(request: NextRequest) {
           key: 'ingredient_table',
           params: { content: tableHTML }
         });
+        console.log(`🔄 [POST] Replaced ingredient_list with ingredient_table`);
       } else if (item.key === 'total_cost') {
+        console.log(`🔄 [POST] Skipping total_cost (will be re-added later)`);
         continue;
       } else {
         newStructuredList.push(item);
+        console.log(`🔄 [POST] Added item with key: ${item.key}`);
       }
     }
 
+    // Re-add total cost after ingredient table
     const totalCostItem = {
       key: "total_cost",
       params: {
@@ -206,11 +236,17 @@ export async function POST(request: NextRequest) {
     const tableIndex = newStructuredList.findIndex(item => item.key === 'ingredient_table');
     if (tableIndex !== -1) {
       newStructuredList.splice(tableIndex + 1, 0, totalCostItem);
+      console.log(`🔄 [POST] Inserted total_cost after ingredient_table`);
     } else {
       newStructuredList.push(totalCostItem);
+      console.log(`🔄 [POST] Pushed total_cost at end`);
     }
 
     feedResult.structuredList = newStructuredList;
+
+    console.log("📋 [POST] Final structuredList keys:", newStructuredList.map(item => item.key));
+    const hasWeeklyPlan = newStructuredList.some(item => item.key === 'weekly_feed_plan');
+    console.log(`📋 [POST] weekly_feed_plan exists in final list? ${hasWeeklyPlan}`);
 
     // ========== CREATE SESSION ==========
     const sessionRef = db.collection("farmer_sessions").doc();
@@ -232,6 +268,10 @@ export async function POST(request: NextRequest) {
       ward: ward || '',
       village: village || '',
       country: normalizedCountry,
+      // NEW FIELDS
+      numberOfBirds: parseFloat(numberOfBirds) || 0,
+      salePricePerBird: parseFloat(salePricePerBird) || 0,
+      pricePerEgg: parseFloat(pricePerEgg) || 0,
       feedResult: {
         ingredients: feedResult.ingredients,
         totalCost: feedResult.totalCost,
@@ -265,7 +305,7 @@ export async function POST(request: NextRequest) {
     }, { status: 200 });
 
   } catch (error: any) {
-    console.error("API Route Error:", error);
+    console.error("❌ API Route Error:", error);
     return NextResponse.json({
       success: false,
       error: error.message || "Unknown error occurred"

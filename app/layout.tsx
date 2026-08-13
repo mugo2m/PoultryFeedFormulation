@@ -19,7 +19,7 @@ const monaSans = Mona_Sans({
 
 export const metadata: Metadata = {
   title: "hugos",
-  description: "An AI-powered platform for preparing for mock interviews",
+  description: "An AI-powered platform for preparing for farmers interviews",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

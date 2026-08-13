@@ -70,27 +70,32 @@ const quantityOptions = [
   "95 kg",
   "100 kg"
 ];
-
-// ========== UPDATED: 17 Ingredients (5 new added) ==========
 const ingredientOptions = [
-  "Broken maize",
-  "Soya bean meal",
-  "Fish meal (omena/dagaa)",
-  "Sunflower cake",
-  "Wheat bran",
-  "Maize bran",           // NEW
-  "Wheat pollard",        // NEW
-  "Cotton seed cake",     // NEW
-  "Lime",
-  "DCP",
-  "Premix (starter/grower/layer specific)",
-  "Methionine",
-  "Lysine",
-  "Threonine",            // NEW
-  "Tryptophan",           // NEW
-  "Salt",
-  "Toxin binder"
+  "whole maize",
+  "maize bran",
+  "wheat pollard",
+  "soya meal",
+  "dcp",
+  "sunflower cake",
+  "cotton seed cake",
+  "fish meal / omena",
+  "lime",
+  "bone meal",
+  "chick premix",
+  "growers premix",
+  "layers premix",
+  "salt",
+  "toxin binder",
+  "lysine",
+  "methionine",
+  "threonine",
+  "tryptophan",
+  "coccidiostat",
+  "maize germ",
+  "wheat germ"
 ];
+
+
 
 // ========== COUNTRY LIST ==========
 const countryOptions = [
@@ -270,6 +275,10 @@ const CreateInterviewAgent = ({
     subCounty: "",
     ward: "",
     village: "",
+    // NEW FIELDS
+    numberOfBirds: "",
+    salePricePerBird: "",
+    pricePerEgg: "",
   });
 
   const [debugInfo, setDebugInfo] = useState({
@@ -369,6 +378,32 @@ const CreateInterviewAgent = ({
         type: "prices",
         sectionKey: "section_prices",
       },
+      // ===== NEW QUESTIONS =====
+      {
+        id: "numberOfBirds",
+        questionKey: "question_number_of_birds",
+        type: "text",
+        placeholder: "e.g., 100",
+        sectionKey: "section_birds",
+        // Always show
+      },
+      // Conditional: only for Layer stage
+      ...(farmerDetails.stage === "Layer (20+ weeks)" ? [
+        {
+          id: "salePricePerBird",
+          questionKey: "question_sale_price_per_bird",
+          type: "text",
+          placeholder: "e.g., 1200",
+          sectionKey: "section_financial"
+        },
+        {
+          id: "pricePerEgg",
+          questionKey: "question_price_per_egg",
+          type: "text",
+          placeholder: "e.g., 20",
+          sectionKey: "section_financial"
+        }
+      ] : []),
       {
         id: "county",
         questionKey: "question_county",
@@ -400,7 +435,7 @@ const CreateInterviewAgent = ({
     ];
 
     return baseQuestions;
-  }, [farmerDetails.breed]);
+  }, [farmerDetails.breed, farmerDetails.stage]); // Added stage dependency
 
   // Filter out the prices question if no ingredients selected
   const filterQuestions = useCallback((questions: any[]) => {
@@ -765,6 +800,12 @@ const CreateInterviewAgent = ({
       acknowledgment = safeT('ack_ingredients', { answer: spokenAnswer });
     } else if (fieldId === "ingredientPrices") {
       acknowledgment = safeT('ack_prices', { answer: "Prices recorded" });
+    } else if (fieldId === "numberOfBirds") {
+      acknowledgment = safeT('ack_number_of_birds', { answer: spokenAnswer });
+    } else if (fieldId === "salePricePerBird") {
+      acknowledgment = safeT('ack_sale_price_per_bird', { answer: spokenAnswer });
+    } else if (fieldId === "pricePerEgg") {
+      acknowledgment = safeT('ack_price_per_egg', { answer: spokenAnswer });
     } else if (fieldId === "county") {
       acknowledgment = safeT('ack_county', { answer: spokenAnswer });
     } else if (fieldId === "subCounty") {
@@ -827,21 +868,8 @@ const CreateInterviewAgent = ({
       return;
     }
 
-    // Special validation for coccidiostat with layer
-    if (currentConfig.id === "includeCoccidiostat") {
-      const isLayer = farmerDetails.stage && farmerDetails.stage.toLowerCase().includes("layer");
-      if (isLayer && cleanAnswer.toLowerCase() === "yes") {
-        toast.error(safeT('coccidiostat_not_allowed_layer'), {
-          description: safeT('coccidiostat_layer_warning'),
-          duration: 8000
-        });
-        cleanAnswer = "No";
-        finalValue = "No";
-        toast.info(safeT('forced_coccidiostat_no'));
-      }
-    }
-
-    // For dropdowns
+    // For text inputs, store as string (we'll parse numbers later)
+    // For dropdowns, handle as before
     if (currentConfig.type === "dropdown") {
       const matched = currentConfig.options.find((opt: string) => opt.toLowerCase() === cleanAnswer.toLowerCase());
       if (matched) {
@@ -849,6 +877,8 @@ const CreateInterviewAgent = ({
       } else {
         finalValue = currentConfig.options[0];
       }
+    } else if (currentConfig.type === "text") {
+      finalValue = cleanAnswer;
     } else {
       finalValue = cleanAnswer;
     }
@@ -894,6 +924,7 @@ const CreateInterviewAgent = ({
 
   // ========== START VOICE SETUP ==========
   const startVoiceSetup = async () => {
+    console.log("🎤 [startVoiceSetup] Starting voice setup");
     if (!voiceEnabled || !voiceAssistantRef.current) {
       toast.error(safeT('enable_voice_first'));
       return;
@@ -918,7 +949,11 @@ const CreateInterviewAgent = ({
       subCounty: "",
       ward: "",
       village: "",
+      numberOfBirds: "",
+      salePricePerBird: "",
+      pricePerEgg: "",
     });
+    console.log("🔄 [startVoiceSetup] Farmer details reset");
 
     askQuestion(0);
   };
@@ -929,6 +964,7 @@ const CreateInterviewAgent = ({
 
     const questionKey = allQuestions[step].questionKey;
     let question = safeT(questionKey);
+    console.log(`❓ [askQuestion] Step ${step}: ${questionKey} -> "${question}"`);
 
     setDebugInfo(prev => ({ ...prev, currentQuestion: step + 1 }));
     setUserTranscript("");
@@ -955,17 +991,27 @@ const CreateInterviewAgent = ({
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120000);
 
+    // Prepare request body with all fields
+    const requestBody = {
+      ...farmerDetails,
+      userid: currentUserId,
+      quantityKg: parseFloat(farmerDetails.quantityKg) || 0,
+      country: farmerDetails.country.toLowerCase(),
+      ingredientPrices: farmerDetails.ingredientPrices,
+      numberOfBirds: parseInt(farmerDetails.numberOfBirds) || 0,
+      salePricePerBird: parseFloat(farmerDetails.salePricePerBird) || 0,
+      pricePerEgg: parseFloat(farmerDetails.pricePerEgg) || 0,
+    };
+
+    console.log("📤 [generateSession] Sending request body:", JSON.stringify(requestBody, null, 2));
+    console.log("🔢 [generateSession] numberOfBirds from farmerDetails:", farmerDetails.numberOfBirds);
+    console.log("🔢 [generateSession] numberOfBirds parsed:", requestBody.numberOfBirds);
+
     try {
       const response = await fetch("/api/vapi/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...farmerDetails,
-          userid: currentUserId,
-          quantityKg: parseFloat(farmerDetails.quantityKg) || 0,
-          country: farmerDetails.country.toLowerCase(),
-          ingredientPrices: farmerDetails.ingredientPrices,
-        }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal
       });
       clearTimeout(timeoutId);
@@ -973,7 +1019,11 @@ const CreateInterviewAgent = ({
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
 
       const data = await response.json();
+      console.log("📥 [generateSession] Response data:", data);
+
       if (data.success && data.sessionId) {
+        console.log(`✅ [generateSession] Session created: ${data.sessionId}`);
+        console.log("📊 [generateSession] structuredList keys:", data.structuredList?.map((item: any) => item.key) || []);
         await voiceAssistantRef.current.speak(safeT('ready_redirect'));
         setTimeout(() => window.location.href = `/interview/${data.sessionId}`, 2000);
         setCurrentStep("redirecting");
@@ -982,7 +1032,7 @@ const CreateInterviewAgent = ({
       }
     } catch (error: any) {
       clearTimeout(timeoutId);
-      console.error("Generate session error:", error);
+      console.error("❌ [generateSession] Error:", error);
       if (error.name === 'AbortError') {
         toast.error(safeT('request_timeout') || "Request timed out. Please try again.");
       } else {
@@ -995,6 +1045,7 @@ const CreateInterviewAgent = ({
   };
 
   const stopEverything = () => {
+    console.log("🛑 [stopEverything] Stopping everything");
     safeStopListening();
     if (window.speechSynthesis) window.speechSynthesis.cancel();
     setCurrentStep("idle");
