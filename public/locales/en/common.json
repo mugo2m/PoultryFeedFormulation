@@ -284,6 +284,7 @@
   "ack_stage": "Stage set to {{answer}}.",
   "ack_quantity": "Quantity set to {{answer}}.",
   "ack_coccidiostat": "Coccidiostat set to {{answer}}.",
+  "vaccination_schedule_title": "💉 Vaccination Schedule",
   "ack_ingredients": "Available ingredients: {{answer}}.",
   "ack_prices": "Prices recorded.",
 

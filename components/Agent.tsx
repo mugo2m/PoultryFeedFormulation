@@ -27,7 +27,7 @@ import {
   CheckCircle,
   List,
   ClipboardList,
-  Calendar, // Added for weekly_feed_plan
+  Calendar,
 } from "lucide-react";
 import { useCurrency } from '@/lib/context/CurrencyContext';
 
@@ -803,6 +803,10 @@ const Agent = ({
       console.log("📅 [renderRecommendationText] Rendering weekly_feed_plan with content:", displayContent);
       icon = <Calendar className="w-5 h-5" />;
       title = safeT('weekly_feed_plan_title', 'Weekly Feed Plan & Financial Summary');
+    }
+    else if (item.key === 'vaccination_schedule') {
+      icon = <Shield className="w-5 h-5" />;
+      title = safeT('vaccination_schedule_title', 'Vaccination Schedule');
     }
     else { icon = <Sparkles className="w-5 h-5" />; title = item.key; }
 

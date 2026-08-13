@@ -6,6 +6,7 @@
 // Nutritional targets are correctly set per breed and stage.
 // Added: Weekly feed planning, egg production, revenue, and profit calculations.
 // Updated: Wording for weekly plan ("per day", "per week") and currency formatting.
+// Added: Vaccination schedule section.
 
 export interface Ingredient {
   name: string;
@@ -984,50 +985,50 @@ export async function formulateFeed(params: {
     }
   });
 
-  // ===== NEW: Weekly Feed Plan & Financial Summary =====
+  // ===== WEEKLY FEED PLAN & FINANCIAL SUMMARY =====
   console.log(`📊 [formulateFeed] numberOfBirds > 0? ${numberOfBirds > 0}`);
   if (numberOfBirds > 0) {
     console.log("📊 [formulateFeed] Generating weekly feed plan content...");
-    let weeklyContent = `**Cost per kg:** ${costPerKg.toFixed(2)}\n\n`;
+    let weeklyContent = `**Cost per kg:** Ksh ${costPerKg.toFixed(2)}\n\n`;
     const entries = weeklyPlan.weeklyEntries;
 
     if (stageKey === 'layer') {
-      // Layer phases
+      // Layer phases – bold and "Phase:" removed
       for (const entry of entries) {
-        weeklyContent += `**Phase: Weeks ${entry.startWeek}–${entry.endWeek} (${entry.endWeek - entry.startWeek + 1} weeks) – ${entry.dailyIntake}g feed per bird, ${entry.productionPercent}% egg production**\n`;
-        weeklyContent += `• Week ${entry.startWeek}–${entry.endWeek}: ${entry.dailyIntake}g feed per bird per day, total feed ${entry.weeklyFeed.toFixed(1)} kg per week, @ ${costPerKg.toFixed(2)} per kg feed will cost ${(entry.weeklyCost).toFixed(2)}\n`;
+        weeklyContent += `Weeks ${entry.startWeek}–${entry.endWeek} (${entry.endWeek - entry.startWeek + 1} weeks) – ${entry.dailyIntake}g feed per bird, ${entry.productionPercent}% egg production\n`;
+        weeklyContent += `• Week ${entry.startWeek}–${entry.endWeek}: ${entry.dailyIntake}g feed per bird per day, total feed ${entry.weeklyFeed.toFixed(1)} kg per week, @ Ksh ${costPerKg.toFixed(2)} per kg feed will cost Ksh ${entry.weeklyCost.toFixed(2)}\n`;
         weeklyContent += `• Total feed: ${(entry.weeklyFeed * (entry.endWeek - entry.startWeek + 1)).toFixed(1)} kg\n`;
-        weeklyContent += `• Total feed cost: ${(entry.weeklyCost * (entry.endWeek - entry.startWeek + 1)).toFixed(2)}\n`;
+        weeklyContent += `• Total feed cost: Ksh ${(entry.weeklyCost * (entry.endWeek - entry.startWeek + 1)).toFixed(2)}\n`;
         weeklyContent += `• Eggs produced: ${(entry.eggsPerWeek * (entry.endWeek - entry.startWeek + 1)).toFixed(0)} eggs\n`;
-        weeklyContent += `• Egg revenue (@ ${pricePerEgg}/egg): ${(entry.eggRevenuePerWeek * (entry.endWeek - entry.startWeek + 1)).toFixed(2)}\n\n`;
+        weeklyContent += `• Egg revenue (@ Ksh ${pricePerEgg}/egg): Ksh ${(entry.eggRevenuePerWeek * (entry.endWeek - entry.startWeek + 1)).toFixed(2)}\n\n`;
       }
       // Total summary for layer
       weeklyContent += `**Total Layer Stage Summary (Weeks 19–100)**\n`;
       weeklyContent += `• Total feed: ${weeklyPlan.totalFeed.toFixed(1)} kg\n`;
-      weeklyContent += `• Total feed cost: ${weeklyPlan.totalCost.toFixed(2)}\n`;
+      weeklyContent += `• Total feed cost: Ksh ${weeklyPlan.totalCost.toFixed(2)}\n`;
       weeklyContent += `• Total eggs produced: ${weeklyPlan.totalEggs.toFixed(0)} eggs\n`;
-      weeklyContent += `• Total egg revenue: ${weeklyPlan.eggRevenue.toFixed(2)}\n`;
+      weeklyContent += `• Total egg revenue: Ksh ${weeklyPlan.eggRevenue.toFixed(2)}\n`;
       if (salePricePerBird > 0) {
-        weeklyContent += `• Spent hen revenue (@ ${salePricePerBird}/bird): ${weeklyPlan.birdRevenue.toFixed(2)}\n`;
+        weeklyContent += `• Spent hen revenue (@ Ksh ${salePricePerBird}/bird): Ksh ${weeklyPlan.birdRevenue.toFixed(2)}\n`;
       }
-      weeklyContent += `• Total income: ${(weeklyPlan.eggRevenue + weeklyPlan.birdRevenue).toFixed(2)}\n`;
-      weeklyContent += `• Net profit: ${weeklyPlan.netProfit.toFixed(2)}\n`;
-      weeklyContent += `• Profit per bird: ${(weeklyPlan.netProfit / numberOfBirds).toFixed(2)}\n`;
+      weeklyContent += `• Total income: Ksh ${(weeklyPlan.eggRevenue + weeklyPlan.birdRevenue).toFixed(2)}\n`;
+      weeklyContent += `• Net profit: Ksh ${weeklyPlan.netProfit.toFixed(2)}\n`;
+      weeklyContent += `• Profit per bird: Ksh ${(weeklyPlan.netProfit / numberOfBirds).toFixed(2)}\n`;
     } else {
       // Chick, Grower, Broiler
       for (const entry of entries) {
         const weekLabel = entry.week ? `Week ${entry.week}` : `Week ${entry.startWeek}–${entry.endWeek}`;
-        weeklyContent += `• ${weekLabel}: ${entry.dailyIntake}g feed per bird per day, total feed ${entry.weeklyFeed.toFixed(1)} kg per week, @ ${costPerKg.toFixed(2)} per kg feed will cost ${entry.weeklyCost.toFixed(2)}\n`;
+        weeklyContent += `• ${weekLabel}: ${entry.dailyIntake}g feed per bird per day, total feed ${entry.weeklyFeed.toFixed(1)} kg per week, @ Ksh ${costPerKg.toFixed(2)} per kg feed will cost Ksh ${entry.weeklyCost.toFixed(2)}\n`;
       }
       weeklyContent += `\n**Total ${stage} Stage Summary**\n`;
       weeklyContent += `• Total feed: ${weeklyPlan.totalFeed.toFixed(1)} kg\n`;
-      weeklyContent += `• Total feed cost: ${weeklyPlan.totalCost.toFixed(2)}\n`;
+      weeklyContent += `• Total feed cost: Ksh ${weeklyPlan.totalCost.toFixed(2)}\n`;
       if (salePricePerBird > 0) {
-        weeklyContent += `• Bird revenue (@ ${salePricePerBird}/bird): ${weeklyPlan.birdRevenue.toFixed(2)}\n`;
-        weeklyContent += `• Net profit: ${weeklyPlan.netProfit.toFixed(2)}\n`;
-        weeklyContent += `• Profit per bird: ${(weeklyPlan.netProfit / numberOfBirds).toFixed(2)}\n`;
+        weeklyContent += `• Bird revenue (@ Ksh ${salePricePerBird}/bird): Ksh ${weeklyPlan.birdRevenue.toFixed(2)}\n`;
+        weeklyContent += `• Net profit: Ksh ${weeklyPlan.netProfit.toFixed(2)}\n`;
+        weeklyContent += `• Profit per bird: Ksh ${(weeklyPlan.netProfit / numberOfBirds).toFixed(2)}\n`;
       } else {
-        weeklyContent += `• Cost per bird: ${(weeklyPlan.totalCost / numberOfBirds).toFixed(2)}\n`;
+        weeklyContent += `• Cost per bird: Ksh ${(weeklyPlan.totalCost / numberOfBirds).toFixed(2)}\n`;
       }
     }
 
@@ -1042,6 +1043,28 @@ export async function formulateFeed(params: {
   } else {
     console.log("📊 [formulateFeed] numberOfBirds is 0 or not provided – skipping weekly plan");
   }
+
+  // ===== VACCINATION SCHEDULE (added in full, no bold) =====
+  const vaccinationSchedule =
+    `• Day 1: Marek's – Subcutaneous / Neck\n` +
+    `• Day 1: Newcastle Disease – Eye or Nasal Drop\n` +
+    `• Day 7–9: Gumboro (IBD) – Drinking Water\n` +
+    `• Day 10–14: Newcastle (Lasota) + IB – Drinking Water\n` +
+    `• Day 16–18: Gumboro (IBD) – Drinking Water\n` +
+    `• Week 6: Newcastle (Lasota) + IB – Drinking Water\n` +
+    `• Week 6–8: Fowl Typhoid + Coryza – Injection\n` +
+    `• Week 8–9: Deworming – Every 8 Weeks\n` +
+    `• Week 8–10: Fowl Pox – Wing Stab\n` +
+    `• Week 12–14: Fowl Typhoid – Injection\n` +
+    `• Week 16–18: Newcastle – Injection / Drinking Water\n` +
+    `• Every 3 Months: Newcastle – Booster`;
+
+  structuredList.push({
+    key: "vaccination_schedule",
+    params: {
+      content: vaccinationSchedule
+    }
+  });
 
   if (warnings.length > 0) {
     structuredList.push({
