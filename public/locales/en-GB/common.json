@@ -531,6 +531,8 @@
   "weekly_feed_plan_cost_per_kg": "Cost per kg",
   "weekly_feed_plan_will_cost": "will cost",
   "weekly_feed_plan_per_week": "per week",
+  "optimization_status_title": "Optimization Status",
+  "ingredient_table_title": "Ingredient Table",
   "weekly_feed_plan_spent_hen_revenue": "Spent hen revenue",
   "enter_birds_count": "Please enter the number of birds.",
   "enter_sale_price": "Please enter the sale price per bird.",

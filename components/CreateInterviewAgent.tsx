@@ -232,7 +232,6 @@ const CreateInterviewAgent = ({
   const [selectedCountryCode, setSelectedCountryCode] = useState("+254");
   const [recognitionLanguage, setRecognitionLanguage] = useState('en-US');
   const nameUsageCountRef = useRef(0);
-  // ===== FIX: Prevent repeated voice ready toast =====
   const voiceReadyToastShownRef = useRef(false);
 
   const getSpokenCurrencyName = (): string => currency.name;
@@ -275,7 +274,6 @@ const CreateInterviewAgent = ({
     subCounty: "",
     ward: "",
     village: "",
-    // NEW FIELDS
     numberOfBirds: "",
     salePricePerBird: "",
     pricePerEgg: "",
@@ -385,7 +383,6 @@ const CreateInterviewAgent = ({
         type: "text",
         placeholder: "e.g., 100",
         sectionKey: "section_birds",
-        // Always show
       },
       // Conditional: only for Layer stage
       ...(farmerDetails.stage === "Layer (20+ weeks)" ? [
@@ -435,9 +432,8 @@ const CreateInterviewAgent = ({
     ];
 
     return baseQuestions;
-  }, [farmerDetails.breed, farmerDetails.stage]); // Added stage dependency
+  }, [farmerDetails.breed, farmerDetails.stage]);
 
-  // Filter out the prices question if no ingredients selected
   const filterQuestions = useCallback((questions: any[]) => {
     return questions.filter(q => {
       if (q.id === "ingredientPrices" && farmerDetails.availableIngredients.length === 0) {
@@ -463,6 +459,14 @@ const CreateInterviewAgent = ({
   useEffect(() => {
     setDebugInfo(prev => ({ ...prev, totalQuestions }));
   }, [totalQuestions]);
+
+  // ===== FORCE CLEAR userTranscript ON TEXT QUESTIONS =====
+  useEffect(() => {
+    const currentQ = allQuestions[configStep];
+    if (currentQ && currentQ.type === "text") {
+      setUserTranscript("");
+    }
+  }, [configStep, allQuestions]);
 
   // ========== SPEECH RECOGNITION ==========
   useEffect(() => {
@@ -543,13 +547,12 @@ const CreateInterviewAgent = ({
 
     if (!voiceEnabled) {
       voiceAssistantRef.current = null;
-      voiceReadyToastShownRef.current = false; // Reset so toast can be shown again when re-enabled
+      voiceReadyToastShownRef.current = false;
       return;
     }
 
     voiceAssistantRef.current = { speak: async (text: string) => streamQuestionWithVoice(text) };
 
-    // Show toast only once per voice enable session
     if (isMounted && voiceEnabled && !voiceReadyToastShownRef.current) {
       toast.success(safeT('voice_ready'));
       voiceReadyToastShownRef.current = true;
@@ -828,12 +831,36 @@ const CreateInterviewAgent = ({
     toast.success(safeT('recorded', { answer }));
   };
 
-  // ========== PROCESS ANSWER ==========
+  // ========== PROCESS ANSWER (with validation and quantity fix) ==========
   const processAnswer = async (answer: string) => {
     if (currentStep !== "configuring") return;
 
     const currentConfig = allQuestions[configStep];
-    let cleanAnswer = answer;
+    let cleanAnswer = answer.trim();
+
+    // --- VALIDATION ---
+
+    // 1. Check if answer is empty
+    if (!cleanAnswer) {
+      const msg = "Please provide an answer.";
+      toast.warning(msg);
+      await voiceAssistantRef.current?.speak(msg);
+      return;
+    }
+
+    // 2. Numeric fields must be valid numbers > 0
+    const numericFields = ['numberOfBirds', 'salePricePerBird', 'pricePerEgg'];
+    if (numericFields.includes(currentConfig.id)) {
+      const num = parseFloat(cleanAnswer);
+      if (isNaN(num) || num <= 0) {
+        const msg = "Please enter a valid number (e.g., 100).";
+        toast.warning(msg);
+        await voiceAssistantRef.current?.speak(msg);
+        return;
+      }
+      cleanAnswer = num.toString();
+    }
+
     let finalValue = cleanAnswer;
 
     // Handle multi-select (availableIngredients)
@@ -874,12 +901,18 @@ const CreateInterviewAgent = ({
       return;
     }
 
-    // For text inputs, store as string (we'll parse numbers later)
-    // For dropdowns, handle as before
+    // For dropdowns
     if (currentConfig.type === "dropdown") {
       const matched = currentConfig.options.find((opt: string) => opt.toLowerCase() === cleanAnswer.toLowerCase());
       if (matched) {
         finalValue = matched;
+        // 🔧 FIX: For quantityKg, extract only the numeric part
+        if (currentConfig.id === "quantityKg") {
+          const num = parseFloat(finalValue);
+          if (!isNaN(num)) {
+            finalValue = num.toString(); // e.g., "70" instead of "70 kg"
+          }
+        }
       } else {
         finalValue = currentConfig.options[0];
       }
@@ -1009,6 +1042,10 @@ const CreateInterviewAgent = ({
       pricePerEgg: parseFloat(farmerDetails.pricePerEgg) || 0,
     };
 
+    // 🔍 DEBUG: Log quantityKg raw and parsed
+    console.log("🔍 [generateSession] quantityKg raw:", farmerDetails.quantityKg);
+    console.log("🔍 [generateSession] quantityKg parsed:", parseFloat(farmerDetails.quantityKg) || 0);
+
     console.log("📤 [generateSession] Sending request body:", JSON.stringify(requestBody, null, 2));
     console.log("🔢 [generateSession] numberOfBirds from farmerDetails:", farmerDetails.numberOfBirds);
     console.log("🔢 [generateSession] numberOfBirds parsed:", requestBody.numberOfBirds);
@@ -1058,13 +1095,6 @@ const CreateInterviewAgent = ({
     setStreamingQuestion("");
     setIsStreaming(false);
     setUserTranscript("");
-  };
-
-  const skipQuestion = () => {
-    if (currentStep === "configuring" && configStep < allQuestions.length) {
-      processAnswer("not specified");
-      toast.info(safeT('skipped'));
-    }
   };
 
   const submitAnswer = () => {
@@ -1156,6 +1186,7 @@ const CreateInterviewAgent = ({
                   setUserTranscript(priceStrings.join(', '));
                 }}
                 className="flex-1 px-3 py-2 border rounded-lg text-gray-800"
+                autoComplete="off"
               />
               <span className="text-xs text-gray-500">{currency.symbol}</span>
             </div>
@@ -1177,6 +1208,7 @@ const CreateInterviewAgent = ({
       );
     }
 
+    // --- TEXT INPUTS (with autocomplete off) ---
     if (q.type === "text") {
       return (
         <input
@@ -1184,17 +1216,30 @@ const CreateInterviewAgent = ({
           value={userTranscript}
           onChange={(e) => setUserTranscript(e.target.value)}
           placeholder={q.placeholder || safeT('type_answer')}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck="false"
+          name="noautofill"
+          id="noautofill"
           className="w-full px-4 py-3 border-2 rounded-xl text-blue-900 font-medium focus:border-blue-600 placeholder-gray-400"
         />
       );
     }
 
+    // Fallback for any other type
     return (
       <input
         type="text"
         value={userTranscript}
         onChange={(e) => setUserTranscript(e.target.value)}
         placeholder={safeT('type_answer')}
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck="false"
+        name="noautofill"
+        id="noautofill"
         className="w-full px-4 py-3 border-2 rounded-xl text-blue-900 font-medium focus:border-blue-600 placeholder-gray-400"
       />
     );
@@ -1307,12 +1352,6 @@ const CreateInterviewAgent = ({
                     >
                       <Send className="w-4 h-4" />
                       {safeT('submit_answer')}
-                    </button>
-                    <button
-                      onClick={skipQuestion}
-                      className="px-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white py-2.5 rounded-xl font-medium"
-                    >
-                      {safeT('skip')}
                     </button>
                   </div>
                 )}

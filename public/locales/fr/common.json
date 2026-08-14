@@ -575,7 +575,8 @@
   "voice_muted": "Voix coupée",
   "stop": "Arrêter",
 
-
+"optimization_status_title": "Statut d'Optimisation",
+  "ingredient_table_title": "Tableau des Ingrédients",
 
 
   "question_number_of_birds": "Combien d'oiseaux avez-vous ?",

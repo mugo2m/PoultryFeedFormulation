@@ -257,6 +257,8 @@
   "ack_price_per_egg": "You sell each egg for {{answer}} Ksh.",
   "weekly_feed_plan_title": "Weekly Feed Plan & Financial Summary",
   "weekly_feed_plan_phase": "Phase",
+  "optimization_status_title": "Optimization Status",
+  "ingredient_table_title": "Ingredient Table",
   "weekly_feed_plan_weeks": "Weeks",
   "weekly_feed_plan_duration": "weeks",
   "weekly_feed_plan_daily_intake": "g feed per bird",

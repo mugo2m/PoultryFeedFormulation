@@ -332,7 +332,9 @@
 
   "crop_benefits_title": "🌿 NUTRICIÓN Y BENEFICIOS PARA LA SALUD – {{crop}}",
   "crop_benefits_subtitle": "Por cada 100 g de peso fresco",
-  "crop_benefits_nutrients_header": "Nutrientes clave",
+
+    "optimization_status_title": "Estado de Optimización",
+  "ingredient_table_title": "Tabla de Ingredientes",
   "crop_benefits_health_header": "Beneficios para la salud",
   "crop_benefits_nutrient_format": "• {{name}}: {{amount}} ({{percent}}% del valor diario)",
   "crop_benefits_benefit_format": "• {{benefit}}",
