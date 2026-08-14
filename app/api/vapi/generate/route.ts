@@ -1,3 +1,4 @@
+
 // app/api/vapi/generate/route.ts – Complete Poultry Feed Formulation API (no reduction, no symbols)
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/firebase/admin";
@@ -272,6 +273,8 @@ export async function POST(request: NextRequest) {
       numberOfBirds: parseFloat(numberOfBirds) || 0,
       salePricePerBird: parseFloat(salePricePerBird) || 0,
       pricePerEgg: parseFloat(pricePerEgg) || 0,
+      feedName: feedResult.feedName || '',
+      recipeName: feedResult.recipeName || '',
       feedResult: {
         ingredients: feedResult.ingredients,
         totalCost: feedResult.totalCost,
@@ -293,6 +296,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       sessionId: sessionId,
+      feedName: feedResult.feedName || '',
+      recipeName: feedResult.recipeName || '',
       structuredList: feedResult.structuredList,
       feedResult: {
         ingredients: feedResult.ingredients,

@@ -1,3 +1,6 @@
+
+
+
 // lib/feedFormulation.ts
 // Complete Poultry Feed Formulation Engine with Fixed Recipes and Cost Ranking
 // Recipes: "hugos poultry recipes" – includes Maize Germ and Wheat Germ.
@@ -24,6 +27,8 @@ export interface NutritionalSummary {
 }
 
 export interface FeedResult {
+  feedName: string;
+  recipeName: string;
   ingredients: Ingredient[];
   totalCost: number;
   nutritionalSummary: NutritionalSummary;
@@ -890,6 +895,21 @@ export async function formulateFeed(params: {
 
   console.log("📊 [formulateFeed] Selected recipe:", selectedRecipe?.name);
 
+  // Human-friendly name used by the archive/history cards.
+  // The selected recipe name remains available separately as recipeName.
+  const feedName =
+    breedKey === 'broiler' && stageKey === 'starter'
+      ? 'Broiler Starter Mash'
+      : breedKey === 'broiler' && stageKey === 'finisher'
+        ? 'Broiler Finisher Mash'
+        : stageKey === 'starter'
+          ? 'Chick Mash'
+          : stageKey === 'grower'
+            ? 'Growers Mash'
+            : stageKey === 'layer'
+              ? 'Layers Mash'
+              : `${stage} Feed`;
+
   // Compute cost per kg
   const costPerKg = totalCost / quantityKg;
   console.log(`📊 [formulateFeed] costPerKg: ${costPerKg}`);
@@ -1078,6 +1098,8 @@ export async function formulateFeed(params: {
   console.log("📊 [formulateFeed] Final structuredList keys:", structuredList.map(item => item.key));
 
   return {
+    feedName,
+    recipeName: selectedRecipe?.name || '',
     ingredients: finalIngredients,
     totalCost,
     nutritionalSummary: targetNutrition,

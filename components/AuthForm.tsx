@@ -20,7 +20,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
-import { signIn, signUp, createPhoneAccount, signInWithPhone } from "@/lib/actions/auth.action";
+import {
+  signIn,
+  signUp,
+  createPhoneAccount,
+  signInWithPhone,
+} from "@/lib/actions/auth.action";
+
 import FormField from "./FormField";
 
 // Country codes for African countries
@@ -52,169 +58,461 @@ const emailSignInSchema = z.object({
 const phoneSignUpSchema = z.object({
   name: z.string().min(3),
   countryCode: z.string(),
-  phoneNumber: z.string().regex(/^\d{6,15}$/, "Please enter a valid phone number"),
-  pin: z.string().regex(/^\d{4}$/, "PIN must be exactly 4 digits"),
+  phoneNumber: z
+    .string()
+    .regex(
+      /^\d{6,15}$/,
+      "Please enter a valid phone number"
+    ),
+  pin: z
+    .string()
+    .regex(
+      /^\d{4}$/,
+      "PIN must be exactly 4 digits"
+    ),
 });
 
 const phoneSignInSchema = z.object({
   countryCode: z.string(),
-  phoneNumber: z.string().regex(/^\d{6,15}$/, "Please enter a valid phone number"),
-  pin: z.string().regex(/^\d{4}$/, "PIN must be exactly 4 digits"),
+  phoneNumber: z
+    .string()
+    .regex(
+      /^\d{6,15}$/,
+      "Please enter a valid phone number"
+    ),
+  pin: z
+    .string()
+    .regex(
+      /^\d{4}$/,
+      "PIN must be exactly 4 digits"
+    ),
 });
 
-const AuthForm = ({ type }: { type: FormType }) => {
+const AuthForm = ({
+  type,
+}: {
+  type: FormType;
+}) => {
   const router = useRouter();
-  const [authMethod, setAuthMethod] = useState<"email" | "phone">("email");
+
+  const [authMethod, setAuthMethod] =
+    useState<"email" | "phone">("email");
+
+  const [karaokeText, setKaraokeText] =
+    useState("");
+
+  const [karaokeWordIndex, setKaraokeWordIndex] =
+    useState(-1);
+
+  const [karaokeActive, setKaraokeActive] =
+    useState(false);
+
+  const speakSignInSuccess =
+    async (): Promise<void> => {
+      const message =
+        "You have signed in to Hugos Poultry Feed Formulation.";
+
+      setKaraokeText(message);
+      setKaraokeWordIndex(-1);
+      setKaraokeActive(true);
+
+      if (
+        typeof window === "undefined" ||
+        !("speechSynthesis" in window)
+      ) {
+        setKaraokeActive(false);
+        return;
+      }
+
+      window.speechSynthesis.cancel();
+
+      // Give the browser a moment to finish
+      // cancelling any previous utterance.
+      await new Promise<void>((resolve) =>
+        setTimeout(resolve, 100)
+      );
+
+      const utterance =
+        new SpeechSynthesisUtterance(message);
+
+      utterance.lang = "en-US";
+      utterance.rate = 0.9;
+      utterance.pitch = 1.05;
+      utterance.volume = 1;
+
+      const voices =
+        window.speechSynthesis.getVoices();
+
+      const preferredVoice =
+        voices.find((voice) =>
+          /Microsoft Jenny|Microsoft Aria|Google UK English Female|Google US English Female|Samantha|Microsoft Zira/i.test(
+            voice.name
+          )
+        );
+
+      if (preferredVoice) {
+        utterance.voice = preferredVoice;
+      }
+
+      const words =
+        message.split(/\s+/);
+
+      return new Promise<void>((resolve) => {
+        utterance.onboundary = (event) => {
+          if (event.name !== "word") {
+            return;
+          }
+
+          const spoken = message
+            .slice(0, event.charIndex)
+            .trim();
+
+          const currentIndex = spoken
+            ? spoken.split(/\s+/).length - 1
+            : 0;
+
+          setKaraokeWordIndex(
+            Math.min(
+              currentIndex,
+              words.length - 1
+            )
+          );
+        };
+
+        utterance.onend = () => {
+          setKaraokeWordIndex(
+            words.length - 1
+          );
+
+          setKaraokeActive(false);
+
+          resolve();
+        };
+
+        utterance.onerror = () => {
+          setKaraokeActive(false);
+          resolve();
+        };
+
+        window.speechSynthesis.speak(
+          utterance
+        );
+      });
+    };
 
   // Email form
-  const emailForm = useForm<z.infer<typeof emailSignUpSchema | typeof emailSignInSchema>>({
-    resolver: zodResolver(type === "sign-up" ? emailSignUpSchema : emailSignInSchema),
-    defaultValues: {
-      name: "",
-      email: "",
-      password: "",
-    },
-  });
+  const emailForm =
+    useForm<
+      z.infer<
+        typeof emailSignUpSchema |
+        typeof emailSignInSchema
+      >
+    >({
+      resolver: zodResolver(
+        type === "sign-up"
+          ? emailSignUpSchema
+          : emailSignInSchema
+      ),
+
+      defaultValues: {
+        name: "",
+        email: "",
+        password: "",
+      },
+    });
 
   // Phone form
-  const phoneForm = useForm<z.infer<typeof phoneSignUpSchema | typeof phoneSignInSchema>>({
-    resolver: zodResolver(type === "sign-up" ? phoneSignUpSchema : phoneSignInSchema),
-    defaultValues: {
-      name: "",
-      countryCode: "+254",
-      phoneNumber: "",
-      pin: "",
-    },
-  });
+  const phoneForm =
+    useForm<
+      z.infer<
+        typeof phoneSignUpSchema |
+        typeof phoneSignInSchema
+      >
+    >({
+      resolver: zodResolver(
+        type === "sign-up"
+          ? phoneSignUpSchema
+          : phoneSignInSchema
+      ),
 
-  const onEmailSubmit = async (data: any) => {
-    try {
-      if (type === "sign-up") {
-        const { name, email, password } = data;
+      defaultValues: {
+        name: "",
+        countryCode: "+254",
+        phoneNumber: "",
+        pin: "",
+      },
+    });
 
-        const userCredential = await createUserWithEmailAndPassword(
-          auth,
-          email,
-          password
-        );
+  const onEmailSubmit =
+    async (data: any) => {
+      try {
+        if (type === "sign-up") {
+          const {
+            name,
+            email,
+            password,
+          } = data;
 
-        const result = await signUp({
-          uid: userCredential.user.uid,
-          name,
-          email,
-          password,
-        });
+          const userCredential =
+            await createUserWithEmailAndPassword(
+              auth,
+              email,
+              password
+            );
 
-        if (!result.success) {
-          toast.error(result.message);
-          return;
+          const result =
+            await signUp({
+              uid: userCredential.user.uid,
+              name,
+              email,
+              password,
+            });
+
+          if (!result.success) {
+            toast.error(
+              result.message
+            );
+            return;
+          }
+
+          toast.success(
+            "Account created successfully. Please sign in."
+          );
+
+          router.push("/sign-in");
+        } else {
+          const {
+            email,
+            password,
+          } = data;
+
+          const userCredential =
+            await signInWithEmailAndPassword(
+              auth,
+              email,
+              password
+            );
+
+          const idToken =
+            await userCredential.user.getIdToken();
+
+          await signIn({
+            email,
+            idToken,
+          });
+
+          toast.success(
+            "You have signed in to Hugos Poultry Feed Formulation."
+          );
+
+          await speakSignInSuccess();
+
+          setTimeout(
+            () =>
+              (window.location.href = "/"),
+            1500
+          );
         }
-
-        toast.success("Account created successfully. Please sign in.");
-        router.push("/sign-in");
-      } else {
-        const { email, password } = data;
-
-        const userCredential = await signInWithEmailAndPassword(
-          auth,
-          email,
-          password
+      } catch (error: any) {
+        toast.error(
+          error.message
         );
-
-        const idToken = await userCredential.user.getIdToken();
-        await signIn({ email, idToken });
-
-        toast.success("Signed in successfully.");
-        setTimeout(() => window.location.href = "/", 100);
       }
-    } catch (error: any) {
-      toast.error(error.message);
-    }
-  };
+    };
 
-  const onPhoneSubmit = async (data: any) => {
-    try {
-      const { name, countryCode, phoneNumber, pin } = data;
-      const fullPhone = `${countryCode}${phoneNumber}`;
-
-      if (type === "sign-up") {
-        const result = await createPhoneAccount({
+  const onPhoneSubmit =
+    async (data: any) => {
+      try {
+        const {
           name,
-          phone: fullPhone,
+          countryCode,
+          phoneNumber,
           pin,
-        });
+        } = data;
 
-        if (!result.success) {
-          toast.error(result.message);
-          return;
+        const fullPhone =
+          `${countryCode}${phoneNumber}`;
+
+        if (type === "sign-up") {
+          const result =
+            await createPhoneAccount({
+              name,
+              phone: fullPhone,
+              pin,
+            });
+
+          if (!result.success) {
+            toast.error(
+              result.message
+            );
+
+            return;
+          }
+
+          toast.success(
+            "Phone account created successfully. Please sign in."
+          );
+
+          router.push("/sign-in");
+        } else {
+          const result =
+            await signInWithPhone({
+              phone: fullPhone,
+              pin,
+            });
+
+          if (!result.success) {
+            toast.error(
+              result.message
+            );
+
+            return;
+          }
+
+          const userCredential =
+            await signInWithEmailAndPassword(
+              auth,
+              result.email!,
+              result.password!
+            );
+
+          const idToken =
+            await userCredential.user.getIdToken();
+
+          await signIn({
+            email: result.email!,
+            idToken,
+          });
+
+          toast.success(
+            "You have signed in to Hugos Poultry Feed Formulation."
+          );
+
+          await speakSignInSuccess();
+
+          setTimeout(
+            () =>
+              (window.location.href = "/"),
+            1500
+          );
         }
-
-        toast.success("Phone account created successfully. Please sign in.");
-        router.push("/sign-in");
-      } else {
-        const result = await signInWithPhone({
-          phone: fullPhone,
-          pin,
-        });
-
-        if (!result.success) {
-          toast.error(result.message);
-          return;
-        }
-
-        const userCredential = await signInWithEmailAndPassword(
-          auth,
-          result.email!,
-          result.password!
+      } catch (error: any) {
+        toast.error(
+          error.message
         );
-
-        const idToken = await userCredential.user.getIdToken();
-        await signIn({ email: result.email!, idToken });
-
-        toast.success("Signed in successfully.");
-        setTimeout(() => window.location.href = "/", 100);
       }
-    } catch (error: any) {
-      toast.error(error.message);
-    }
-  };
+    };
 
-  const isSignIn = type === "sign-in";
+  const isSignIn =
+    type === "sign-in";
 
   return (
     <div className="card-border lg:min-w-[566px]">
       <div className="flex flex-col gap-6 card py-14 px-10">
+
         <div className="flex flex-row gap-2 justify-center">
-          <Image src="/logo.svg" alt="logo" height={32} width={38} />
-          <h2 className="text-primary-100">hugos</h2>
+          <Image
+            src="/logo.svg"
+            alt="logo"
+            height={32}
+            width={38}
+          />
+
+          <h2 className="text-primary-100">
+            hugos
+          </h2>
         </div>
 
-        <h3 className="text-center">Practice job interviews with AI</h3>
+        {karaokeText && (
+          <div
+            aria-live="polite"
+            className={`rounded-lg border px-4 py-3 text-center transition-all ${
+              karaokeActive
+                ? "border-primary-200 bg-primary-50/10"
+                : "border-gray-200"
+            }`}
+          >
+            <div className="text-sm leading-6 font-medium">
+              {karaokeText
+                .split(/\s+/)
+                .map(
+                  (
+                    word,
+                    index
+                  ) => (
+                    <span
+                      key={`${word}-${index}`}
+                      className={`mr-1 inline-block transition-all duration-150 ${
+                        index ===
+                        karaokeWordIndex
+                          ? "scale-110 font-bold text-primary-300"
+                          : index <
+                              karaokeWordIndex
+                            ? "text-primary-200"
+                            : "text-gray-500"
+                      }`}
+                    >
+                      {word}
+                    </span>
+                  )
+                )}
+            </div>
+
+            {karaokeActive && (
+              <div className="mt-1 text-xs text-gray-500">
+                🎤 Speaking...
+              </div>
+            )}
+          </div>
+        )}
+
+        <h3 className="text-center">
+          Practice job interviews with AI
+        </h3>
 
         {/* Method Selection Tabs - FIXED: Removed onValueChange */}
-        <Tabs defaultValue="email" className="w-full">
+        <Tabs
+          defaultValue="email"
+          className="w-full"
+        >
           <TabsList className="grid w-full grid-cols-2">
+
             <TabsTrigger
               value="email"
-              onClick={() => setAuthMethod("email")}
+              onClick={() =>
+                setAuthMethod("email")
+              }
             >
               📧 Email
             </TabsTrigger>
+
             <TabsTrigger
               value="phone"
-              onClick={() => setAuthMethod("phone")}
+              onClick={() =>
+                setAuthMethod("phone")
+              }
             >
               📱 Phone (4-digit PIN)
             </TabsTrigger>
+
           </TabsList>
 
           {/* Email Tab Content */}
           <TabsContent value="email">
+
             <Form {...emailForm}>
-              <form onSubmit={emailForm.handleSubmit(onEmailSubmit)} className="space-y-6 mt-4">
+              <form
+                onSubmit={emailForm.handleSubmit(
+                  onEmailSubmit
+                )}
+                className="space-y-6 mt-4"
+              >
+
                 {!isSignIn && (
                   <FormField
-                    control={emailForm.control}
+                    control={
+                      emailForm.control
+                    }
                     name="name"
                     label="Your Name"
                     placeholder="Your Name"
@@ -223,7 +521,9 @@ const AuthForm = ({ type }: { type: FormType }) => {
                 )}
 
                 <FormField
-                  control={emailForm.control}
+                  control={
+                    emailForm.control
+                  }
                   name="email"
                   label="Your email address"
                   placeholder="Your email address"
@@ -231,27 +531,45 @@ const AuthForm = ({ type }: { type: FormType }) => {
                 />
 
                 <FormField
-                  control={emailForm.control}
+                  control={
+                    emailForm.control
+                  }
                   name="password"
                   label="Enter your password"
                   placeholder="Enter your password"
                   type="password"
                 />
 
-                <Button className="btn w-full" type="submit">
-                  {isSignIn ? "Sign In with Email" : "Create Email Account"}
+                <Button
+                  className="btn w-full"
+                  type="submit"
+                >
+                  {isSignIn
+                    ? "Sign In with Email"
+                    : "Create Email Account"}
                 </Button>
+
               </form>
             </Form>
+
           </TabsContent>
 
           {/* Phone Tab Content */}
           <TabsContent value="phone">
+
             <Form {...phoneForm}>
-              <form onSubmit={phoneForm.handleSubmit(onPhoneSubmit)} className="space-y-6 mt-4">
+              <form
+                onSubmit={phoneForm.handleSubmit(
+                  onPhoneSubmit
+                )}
+                className="space-y-6 mt-4"
+              >
+
                 {!isSignIn && (
                   <FormField
-                    control={phoneForm.control}
+                    control={
+                      phoneForm.control
+                    }
                     name="name"
                     label="Your Name"
                     placeholder="Your Name"
@@ -261,62 +579,113 @@ const AuthForm = ({ type }: { type: FormType }) => {
 
                 {/* Phone Number with Country Code */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Phone Number</label>
+
+                  <label className="text-sm font-medium">
+                    Phone Number
+                  </label>
+
                   <div className="flex gap-2">
+
                     <select
-                      {...phoneForm.register('countryCode')}
+                      {...phoneForm.register(
+                        "countryCode"
+                      )}
                       className="w-28 px-3 py-2 border rounded-md bg-white dark:bg-gray-800"
                     >
-                      {countryCodes.map((country) => (
-                        <option key={country.code} value={country.code}>
-                          {country.flag} {country.code}
-                        </option>
-                      ))}
+                      {countryCodes.map(
+                        (country) => (
+                          <option
+                            key={
+                              country.code
+                            }
+                            value={
+                              country.code
+                            }
+                          >
+                            {
+                              country.flag
+                            }{" "}
+                            {
+                              country.code
+                            }
+                          </option>
+                        )
+                      )}
                     </select>
 
                     <Input
                       type="tel"
                       placeholder="712345678"
-                      {...phoneForm.register('phoneNumber')}
+                      {...phoneForm.register(
+                        "phoneNumber"
+                      )}
                       className="flex-1"
                       maxLength={15}
                     />
+
                   </div>
                 </div>
 
                 {/* 4-digit PIN */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">4-Digit PIN</label>
+
+                  <label className="text-sm font-medium">
+                    4-Digit PIN
+                  </label>
+
                   <Input
                     type="password"
                     placeholder="3846"
-                    {...phoneForm.register('pin')}
+                    {...phoneForm.register(
+                      "pin"
+                    )}
                     maxLength={4}
                     className="w-full"
                   />
+
                   <p className="text-xs text-gray-500">
                     Enter a 4-digit number (e.g., 3846)
                   </p>
+
                 </div>
 
-                <Button className="btn w-full" type="submit">
-                  {isSignIn ? "Sign In with Phone" : "Create Phone Account"}
+                <Button
+                  className="btn w-full"
+                  type="submit"
+                >
+                  {isSignIn
+                    ? "Sign In with Phone"
+                    : "Create Phone Account"}
                 </Button>
+
               </form>
             </Form>
+
           </TabsContent>
         </Tabs>
 
         {/* Toggle between sign-in and sign-up */}
         <p className="text-center">
-          {isSignIn ? "Don't have an account?" : "Already have an account?"}
+
+          {isSignIn
+            ? "Don't have an account?"
+            : "Already have an account?"}
+
           <Link
-            href={!isSignIn ? "/sign-in" : "/sign-up"}
+            href={
+              !isSignIn
+                ? "/sign-in"
+                : "/sign-up"
+            }
             className="font-bold text-user-primary ml-1"
           >
-            {!isSignIn ? "Sign In" : "Sign Up"}
+            {!isSignIn
+              ? "Sign In"
+              : "Sign Up"}
           </Link>
+
         </p>
+
       </div>
     </div>
   );
