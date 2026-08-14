@@ -449,7 +449,13 @@ const CreateInterviewAgent = ({
 
   const allQuestions = useMemo(() => {
     const raw = getQuestions();
-    return filterQuestions(raw);
+    const filtered = filterQuestions(raw);
+    // DEBUG: Log all questions with their placeholder
+    console.log("📋 [allQuestions] Final questions array:");
+    filtered.forEach((q, idx) => {
+      console.log(`  ${idx}: id=${q.id}, type=${q.type}, placeholder=${q.placeholder}`);
+    });
+    return filtered;
   }, [getQuestions, filterQuestions]);
 
   const totalQuestions = allQuestions.length;
@@ -1071,6 +1077,9 @@ const CreateInterviewAgent = ({
   const renderInput = useCallback(() => {
     const q = allQuestions[configStep];
     if (!q) return null;
+
+    // 🔍 DEBUG: Log every question's id, placeholder, and type
+    console.log(`🔍 [renderInput] q.id: ${q.id}, q.placeholder: ${q.placeholder}, q.type: ${q.type}`);
 
     if (q.type === "dropdown") {
       return (
