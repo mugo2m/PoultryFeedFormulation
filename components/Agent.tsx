@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -297,13 +298,42 @@ const Agent = ({
       if (res.ok) {
         setCommentSubmitted(true);
         setFarmerComment('');
-        toast.success(safeT('feedback_saved', 'Comment saved successfully!'));
+
+        // Voice-only success feedback using the existing translation key.
+        // No visible toast is shown.
+        const successMessage = safeT(
+          'feedback_saved',
+          'your comments have been received successfully!'
+        );
+
+        await speakWithVoice(successMessage);
+
+        // Clear the submitted state after the voice message finishes.
+        setCommentSubmitted(false);
       } else {
-        toast.error(safeT('feedback_failed', 'Failed to save comment. Please try again.'));
+        // Voice-only failure feedback using the existing translation key.
+        // No visible toast is shown.
+        const failedMessage = safeT(
+          'feedback_failed',
+          'your comment not received. Please try again later.'
+        );
+
+        await speakWithVoice(failedMessage);
+
+        setCommentSubmitted(false);
       }
     } catch (error: any) {
       console.error("Error submitting farmer comment:", error);
-      toast.error(safeT('feedback_failed', 'Failed to save comment. Please try again.'));
+
+      // Voice-only failure feedback. No visible toast is shown.
+      const failedMessage = safeT(
+        'feedback_failed',
+        'your comment not received. Please try again later.'
+      );
+
+      await speakWithVoice(failedMessage);
+
+      setCommentSubmitted(false);
     } finally {
       setIsCommentSubmitting(false);
     }

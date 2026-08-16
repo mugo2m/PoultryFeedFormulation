@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -222,6 +223,12 @@ export default function Navigation() {
               setKaraokeActive(
                 false
               );
+              setKaraokeText(
+                ""
+              );
+              setKaraokeWordIndex(
+                -1
+              );
 
               resolve();
             };
@@ -240,6 +247,12 @@ export default function Navigation() {
 
               setKaraokeActive(
                 false
+              );
+              setKaraokeText(
+                ""
+              );
+              setKaraokeWordIndex(
+                -1
               );
 
               resolve();
@@ -261,28 +274,18 @@ export default function Navigation() {
         // Sign out from the application.
         await signOut();
 
-        // Message shown and spoken to the farmer.
+        // Get the translated sign-out message.
+        // The farmer hears this message only; it is not displayed.
         const message =
-          "You have signed out successfully. Welcome again, Farmer!";
+          safeT(
+            "sign_out_success_message",
+            "You have signed out successfully. Welcome again !!"
+          );
 
-        // Display toast notification.
-        toast.success(
-          message
-        );
-
-        // Speak the message with karaoke highlighting.
+        // Speak the translated message with the existing
+        // karaoke timing, but keep all text hidden.
         await speakKaraokeMessage(
           message
-        );
-
-        // Give the farmer a short moment
-        // to see the completed message.
-        await new Promise<void>(
-          (resolve) =>
-            setTimeout(
-              resolve,
-              700
-            )
         );
 
         // Redirect to sign-in.
@@ -402,64 +405,6 @@ export default function Navigation() {
         </button>
       </div>
 
-      {/* =====================================================
-          KARAOKE SIGN-OUT MESSAGE
-          ===================================================== */}
-
-      {karaokeText && (
-        <div
-          aria-live="polite"
-          className={`fixed left-1/2 top-20 z-50 w-[min(90vw,700px)] -translate-x-1/2 rounded-xl border px-6 py-5 text-center shadow-lg transition-all ${
-            karaokeActive
-              ? "border-primary-200 bg-white"
-              : "border-gray-200 bg-white"
-          }`}
-        >
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Hugos Poultry Feed Formulation
-          </div>
-
-          <div className="text-base leading-7 font-medium">
-            {karaokeText
-              .split(/\s+/)
-              .map(
-                (
-                  word,
-                  index
-                ) => (
-                  <span
-                    key={`${word}-${index}`}
-                    className={`mr-1 inline-block transition-all duration-150 ${
-                      index ===
-                      karaokeWordIndex
-                        ? "scale-110 font-bold text-primary-300"
-                        : index <
-                            karaokeWordIndex
-                          ? "text-primary-200"
-                          : "text-gray-500"
-                    }`}
-                  >
-                    {word}
-                  </span>
-                )
-              )}
-          </div>
-
-          {karaokeActive && (
-            <div className="mt-2 text-xs text-gray-500">
-              🎤 Speaking...
-            </div>
-          )}
-
-          {!karaokeActive &&
-            karaokeWordIndex >=
-              0 && (
-              <div className="mt-2 text-xs text-green-600">
-                ✓ Message complete
-              </div>
-            )}
-        </div>
-      )}
     </nav>
   );
 }

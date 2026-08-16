@@ -1767,5 +1767,9 @@
   "qa_harvest_dynamic": "For your {{crop}} enterprise, harvest when fingers are plump and angular edges become rounded, usually 9-12 months after planting. Cut the entire bunch with a sharp knife. Handle carefully to avoid bruising. Expected yield: 20-30 tons per acre per year with good management.",
   "qa_seed_dynamic": "For your {{crop}} enterprise, use certified disease-free suckers or tissue culture plants. Plant at 3m x 3m spacing (450 plants/acre) for high density, or 3m x 4m for standard. Each plant needs 50-100g DAP at planting and 50-100g CAN at 3 and 6 months.",
   "qa_varieties_dynamic": "For your {{crop}} enterprise, recommended varieties include: Cavendish (export quality), Williams (high yield), Grand Naine (disease resistant). Choose based on your target market and local climate conditions.",
+  "sign_out_success_message": "You have signed out successfully. Welcome again !!",
+  "phone_already_registered": "Phone number already registered",
+"phone_account_created": "Phone account created successfully. Please sign in.",
+  "sign_in_guidance": "Please sign in using your phone number or email. If you have no account, please create one by pressing Sign Up.",
   "options": "Options"
 }

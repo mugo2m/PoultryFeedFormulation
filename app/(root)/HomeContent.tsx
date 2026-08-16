@@ -1,7 +1,7 @@
 'use client';
 
 import { useOfflineTranslation } from '@/lib/hooks/useOfflineTranslation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -22,25 +22,48 @@ export default function HomeContent({
   const { t, ready, isOnline } =
     useOfflineTranslation();
 
-  const [
-    karaokeText,
-    setKaraokeText
-  ] = useState("");
+  const [karaokeWordIndex, setKaraokeWordIndex] =
+    useState(-1);
 
-  const [
-    karaokeTitle,
-    setKaraokeTitle
-  ] = useState("");
+  const [voiceActive, setVoiceActive] =
+    useState(false);
 
-  const [
-    karaokeWordIndex,
-    setKaraokeWordIndex
-  ] = useState(-1);
+  const guidanceTimeoutRef =
+    useRef<ReturnType<typeof setTimeout> | null>(
+      null
+    );
 
-  const [
-    voiceActive,
-    setVoiceActive
-  ] = useState(false);
+  const guidanceStoppedRef =
+    useRef(false);
+
+  const guidanceMessage =
+    'Press the Start Session button to start your poultry feed formulation.';
+
+  // Stop the Start Session voice guidance immediately.
+  const stopStartSessionGuidance = () => {
+    guidanceStoppedRef.current = true;
+
+    if (
+      guidanceTimeoutRef.current !== null
+    ) {
+      window.clearTimeout(
+        guidanceTimeoutRef.current
+      );
+
+      guidanceTimeoutRef.current = null;
+    }
+
+    if (
+      typeof window !== 'undefined' &&
+      'speechSynthesis' in window
+    ) {
+      window.speechSynthesis.cancel();
+    }
+
+    setVoiceActive(false);
+
+    setKaraokeWordIndex(-1);
+  };
 
   // Safe translation helper
   const safeT = (
@@ -83,29 +106,21 @@ export default function HomeContent({
 
   /*
    * ============================================================
-   * KARAOKE VOICE GUIDANCE
+   * START SESSION VOICE GUIDANCE
    * ============================================================
    *
-   * Translation keys used:
+   * Translation key:
    *
-   * start_session_guidance_title
    * start_session_guidance
    *
-   * Example:
+   * The message is voice-only.
    *
-   * "start_session_guidance_title":
-   * "Hugos Poultry Feed Formulation"
+   * Behavior:
    *
-   * "start_session_guidance":
-   * "Press the Start Session button to start your poultry feed formulation."
-   *
-   * The message:
-   *
-   * 1. Appears on the screen.
-   * 2. Is spoken aloud.
-   * 3. Highlights each word as it is spoken.
-   * 4. Keeps proper spaces between words.
-   * 5. Disappears completely after speech finishes.
+   * 1. Speak the complete sentence.
+   * 2. Wait 2 seconds after speech finishes.
+   * 3. Speak the complete sentence again.
+   * 4. Continue until Start Session is pressed.
    */
 
   useEffect(() => {
@@ -122,23 +137,21 @@ export default function HomeContent({
       return;
     }
 
-    const guidanceTitle =
-      safeT(
-        'start_session_guidance_title'
-      );
+    guidanceStoppedRef.current =
+      false;
 
-    const guidanceMessage =
+    /*
+     * Always obtain the message from the
+     * existing translation key.
+     */
+    const translatedGuidance =
       safeT(
         'start_session_guidance'
       );
 
-    /*
-     * If translations are missing, don't display
-     * the translation key itself to the farmer.
-     */
     if (
-      !guidanceMessage ||
-      guidanceMessage ===
+      !translatedGuidance ||
+      translatedGuidance ===
         'start_session_guidance'
     ) {
       console.warn(
@@ -148,310 +161,243 @@ export default function HomeContent({
       return;
     }
 
-    if (
-      !guidanceTitle ||
-      guidanceTitle ===
-        'start_session_guidance_title'
-    ) {
-      console.warn(
-        'Missing translation value for start_session_guidance_title'
-      );
-
-      return;
-    }
-
-    /*
-     * Split using whitespace so that every word remains
-     * separated correctly in the karaoke display.
-     */
     const words =
-      guidanceMessage
+      translatedGuidance
         .trim()
         .split(/\s+/);
 
+    const speakGuidance =
+      () => {
+        /*
+         * Don't start another sentence after
+         * the farmer has pressed Start Session.
+         */
+        if (
+          guidanceStoppedRef.current
+        ) {
+          return;
+        }
+
+        /*
+         * Cancel any speech that might still
+         * be running before beginning a new
+         * complete sentence.
+         */
+        window.speechSynthesis.cancel();
+
+        const utterance =
+          new SpeechSynthesisUtterance(
+            translatedGuidance
+          );
+
+        utterance.lang =
+          'en-US';
+
+        utterance.rate =
+          0.9;
+
+        utterance.pitch =
+          1.05;
+
+        utterance.volume =
+          1;
+
+        /*
+         * Try to use a natural English voice.
+         */
+        const voices =
+          window.speechSynthesis.getVoices();
+
+        const preferredVoice =
+          voices.find(
+            (voice) =>
+              /Microsoft Jenny|Microsoft Aria|Google UK English Female|Google US English Female|Samantha|Microsoft Zira/i.test(
+                voice.name
+              )
+          );
+
+        if (
+          preferredVoice
+        ) {
+          utterance.voice =
+            preferredVoice;
+        }
+
+        setVoiceActive(
+          true
+        );
+
+        setKaraokeWordIndex(
+          -1
+        );
+
+        /*
+         * Keep word tracking internally.
+         *
+         * The karaoke words are NOT displayed.
+         */
+        utterance.onboundary =
+          (
+            event
+          ) => {
+            if (
+              event.name !==
+              'word'
+            ) {
+              return;
+            }
+
+            const spoken =
+              translatedGuidance
+                .slice(
+                  0,
+                  event.charIndex
+                )
+                .trim();
+
+            const currentIndex =
+              spoken
+                ? spoken
+                    .split(
+                      /\s+/
+                    )
+                    .length -
+                  1
+                : 0;
+
+            setKaraokeWordIndex(
+              Math.min(
+                currentIndex,
+                words.length -
+                  1
+              )
+            );
+          };
+
+        /*
+         * The COMPLETE sentence has finished.
+         */
+        utterance.onend =
+          () => {
+            setVoiceActive(
+              false
+            );
+
+            setKaraokeWordIndex(
+              -1
+            );
+
+            /*
+             * If the farmer has clicked
+             * Start Session, do not repeat.
+             */
+            if (
+              guidanceStoppedRef.current
+            ) {
+              return;
+            }
+
+            /*
+             * IMPORTANT:
+             *
+             * Wait 2 seconds AFTER the complete
+             * sentence has finished speaking.
+             *
+             * Then speak the COMPLETE sentence again.
+             */
+            guidanceTimeoutRef.current =
+              window.setTimeout(
+                () => {
+                  speakGuidance();
+                },
+                2000
+              );
+          };
+
+        /*
+         * If speech fails, wait 2 seconds and
+         * retry the complete sentence.
+         */
+        utterance.onerror =
+          (
+            event
+          ) => {
+            console.error(
+              'Speech synthesis error:',
+              event
+            );
+
+            setVoiceActive(
+              false
+            );
+
+            setKaraokeWordIndex(
+              -1
+            );
+
+            if (
+              guidanceStoppedRef.current
+            ) {
+              return;
+            }
+
+            guidanceTimeoutRef.current =
+              window.setTimeout(
+                () => {
+                  speakGuidance();
+                },
+                2000
+              );
+          };
+
+        /*
+         * Start the complete sentence.
+         */
+        window.speechSynthesis.speak(
+          utterance
+        );
+      };
+
     /*
-     * Show the translated title and message.
+     * First announcement after the page
+     * has rendered.
      */
-    setKaraokeTitle(
-      guidanceTitle
-    );
-
-    setKaraokeText(
-      guidanceMessage
-    );
-
-    setKaraokeWordIndex(
-      -1
-    );
-
-    setVoiceActive(
-      false
-    );
-
-    /*
-     * Start speech after a short delay.
-     *
-     * This gives the page time to render the message
-     * before the browser begins speaking.
-     */
-    const timer =
+    guidanceTimeoutRef.current =
       window.setTimeout(
         () => {
-          /*
-           * Cancel any speech that might already
-           * be running.
-           */
-          window.speechSynthesis.cancel();
-
-          /*
-           * Some browsers load voices asynchronously.
-           * Get the available voices now.
-           */
-          let voices =
-            window.speechSynthesis.getVoices();
-
-          /*
-           * Preferred natural English voices.
-           */
-          const findPreferredVoice =
-            () => {
-              voices =
-                window.speechSynthesis.getVoices();
-
-              return voices.find(
-                (voice) =>
-                  /Microsoft Jenny|Microsoft Aria|Google UK English Female|Google US English Female|Samantha|Microsoft Zira/i.test(
-                    voice.name
-                  )
-              );
-            };
-
-          const speak =
-            () => {
-              const utterance =
-                new SpeechSynthesisUtterance(
-                  guidanceMessage
-                );
-
-              utterance.lang =
-                'en-US';
-
-              /*
-               * Slightly slower so the farmer can
-               * clearly hear the instruction.
-               */
-              utterance.rate =
-                0.9;
-
-              utterance.pitch =
-                1.05;
-
-              utterance.volume =
-                1;
-
-              const preferredVoice =
-                findPreferredVoice();
-
-              if (
-                preferredVoice
-              ) {
-                utterance.voice =
-                  preferredVoice;
-              }
-
-              /*
-               * Voice is now active.
-               */
-              setVoiceActive(
-                true
-              );
-
-              setKaraokeWordIndex(
-                -1
-              );
-
-              /*
-               * Karaoke word tracking.
-               *
-               * Chrome and Edge normally fire
-               * the "word" boundary event.
-               */
-              utterance.onboundary =
-                (
-                  event
-                ) => {
-                  if (
-                    event.name !==
-                    'word'
-                  ) {
-                    return;
-                  }
-
-                  /*
-                   * Find the portion of the sentence
-                   * that has already been spoken.
-                   */
-                  const spoken =
-                    guidanceMessage
-                      .slice(
-                        0,
-                        event.charIndex
-                      )
-                      .trim();
-
-                  /*
-                   * Calculate the current word.
-                   */
-                  const currentIndex =
-                    spoken
-                      ? spoken
-                          .split(
-                            /\s+/
-                          )
-                          .length -
-                        1
-                      : 0;
-
-                  /*
-                   * Highlight the current word.
-                   */
-                  setKaraokeWordIndex(
-                    Math.min(
-                      currentIndex,
-                      words.length -
-                        1
-                    )
-                  );
-                };
-
-              /*
-               * Speech finished.
-               *
-               * IMPORTANT:
-               * Remove the entire karaoke message.
-               */
-              utterance.onend =
-                () => {
-                  setVoiceActive(
-                    false
-                  );
-
-                  setKaraokeWordIndex(
-                    -1
-                  );
-
-                  setKaraokeText(
-                    ''
-                  );
-
-                  setKaraokeTitle(
-                    ''
-                  );
-                };
-
-              /*
-               * If speech encounters an error,
-               * also remove the karaoke message.
-               */
-              utterance.onerror =
-                (
-                  event
-                ) => {
-                  console.error(
-                    'Speech synthesis error:',
-                    event
-                  );
-
-                  setVoiceActive(
-                    false
-                  );
-
-                  setKaraokeWordIndex(
-                    -1
-                  );
-
-                  setKaraokeText(
-                    ''
-                  );
-
-                  setKaraokeTitle(
-                    ''
-                  );
-                };
-
-              /*
-               * Start speaking.
-               */
-              window.speechSynthesis.speak(
-                utterance
-              );
-            };
-
-          /*
-           * If voices are already available,
-           * speak immediately.
-           */
-          if (
-            voices.length >
-            0
-          ) {
-            speak();
-          } else {
-            /*
-             * Otherwise wait for voiceschanged.
-             */
-            const handleVoicesChanged =
-              () => {
-                window.speechSynthesis.removeEventListener(
-                  'voiceschanged',
-                  handleVoicesChanged
-                );
-
-                speak();
-              };
-
-            window.speechSynthesis.addEventListener(
-              'voiceschanged',
-              handleVoicesChanged
-            );
-
-            /*
-             * Safety fallback in case the browser
-             * doesn't fire voiceschanged.
-             */
-            window.setTimeout(
-              () => {
-                window.speechSynthesis.removeEventListener(
-                  'voiceschanged',
-                  handleVoicesChanged
-                );
-
-                if (
-                  !voiceActive
-                ) {
-                  speak();
-                }
-              },
-              1000
-            );
-          }
+          speakGuidance();
         },
         700
       );
 
     /*
-     * Cleanup when farmer leaves page
-     * or component is destroyed.
+     * Cleanup when the farmer leaves
+     * the page/component.
      */
     return () => {
-      window.clearTimeout(
-        timer
-      );
+      guidanceStoppedRef.current =
+        true;
+
+      if (
+        guidanceTimeoutRef.current !==
+        null
+      ) {
+        window.clearTimeout(
+          guidanceTimeoutRef.current
+        );
+
+        guidanceTimeoutRef.current =
+          null;
+      }
 
       window.speechSynthesis.cancel();
 
       setVoiceActive(
         false
+      );
+
+      setKaraokeWordIndex(
+        -1
       );
     };
   }, [
@@ -582,74 +528,7 @@ export default function HomeContent({
 
   return (
     <>
-      {/* ============================================================
-          KARAOKE VOICE GUIDANCE
-          ============================================================ */}
-
-      {karaokeText && (
-        <div
-          className="mb-6 rounded-xl border-2 border-green-200 bg-green-50 p-5 shadow-sm"
-          aria-live="polite"
-          aria-label={`${karaokeTitle}. ${karaokeText}`}
-        >
-
-          {/* Translation key:
-              start_session_guidance_title
-          */}
-          <div className="text-sm font-semibold text-green-800 mb-2">
-            🎤{" "}
-            {karaokeTitle}
-          </div>
-
-          {/* Translation key:
-              start_session_guidance
-          */}
-          <div className="text-lg leading-8 font-medium">
-
-            {karaokeText
-              .trim()
-              .split(/\s+/)
-              .map(
-                (
-                  word,
-                  index
-                ) => (
-                  <span
-                    key={`${word}-${index}`}
-                    className={`
-                      mr-1
-                      inline-block
-                      transition-all
-                      duration-150
-                      ${
-                        index ===
-                        karaokeWordIndex
-                          ? 'scale-110 font-bold text-green-700'
-                          : index <
-                              karaokeWordIndex
-                            ? 'text-green-600'
-                            : 'text-gray-600'
-                      }
-                    `}
-                  >
-                    {word}
-                  </span>
-                )
-              )}
-
-          </div>
-
-          {voiceActive && (
-            <div className="mt-2 text-xs text-green-700">
-              🔊{" "}
-              {safeT(
-                'speaking'
-              )}
-            </div>
-          )}
-
-        </div>
-      )}
+      {/* Start Session guidance is voice-only. */}
 
       {/* Offline Status Banner */}
       {!isOnline && (
@@ -689,7 +568,12 @@ export default function HomeContent({
             asChild
             className="bg-green-600 hover:bg-green-700 text-white max-sm:w-full"
           >
-            <Link href="/generate">
+            <Link
+              href="/generate"
+              onClick={
+                stopStartSessionGuidance
+              }
+            >
               🌱{" "}
               {safeT(
                 'start_session'
@@ -955,6 +839,9 @@ export default function HomeContent({
 
               <Link
                 href="/generate"
+                onClick={
+                  stopStartSessionGuidance
+                }
                 className="text-green-600 hover:text-green-700 mt-2 inline-block"
               >
                 🌾{" "}
