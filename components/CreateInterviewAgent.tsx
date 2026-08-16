@@ -384,15 +384,18 @@ const CreateInterviewAgent = ({
         placeholder: "e.g., 100",
         sectionKey: "section_birds",
       },
-      // Conditional: only for Layer stage
-      ...(farmerDetails.stage === "Layer (20+ weeks)" ? [
+      // Conditional: salePricePerBird for Layer OR Broiler
+      ...(farmerDetails.stage === "Layer (20+ weeks)" || farmerDetails.breed === "Broiler" ? [
         {
           id: "salePricePerBird",
           questionKey: "question_sale_price_per_bird",
           type: "text",
           placeholder: "e.g., 1200",
           sectionKey: "section_financial"
-        },
+        }
+      ] : []),
+      // Conditional: pricePerEgg only for Layer
+      ...(farmerDetails.stage === "Layer (20+ weeks)" ? [
         {
           id: "pricePerEgg",
           questionKey: "question_price_per_egg",
@@ -831,16 +834,13 @@ const CreateInterviewAgent = ({
     toast.success(safeT('recorded', { answer }));
   };
 
-  // ========== PROCESS ANSWER (with validation and quantity fix) ==========
+  // ========== PROCESS ANSWER ==========
   const processAnswer = async (answer: string) => {
     if (currentStep !== "configuring") return;
 
     const currentConfig = allQuestions[configStep];
     let cleanAnswer = answer.trim();
 
-    // --- VALIDATION ---
-
-    // 1. Check if answer is empty
     if (!cleanAnswer) {
       const msg = "Please provide an answer.";
       toast.warning(msg);
@@ -848,7 +848,6 @@ const CreateInterviewAgent = ({
       return;
     }
 
-    // 2. Numeric fields must be valid numbers > 0
     const numericFields = ['numberOfBirds', 'salePricePerBird', 'pricePerEgg'];
     if (numericFields.includes(currentConfig.id)) {
       const num = parseFloat(cleanAnswer);
@@ -906,11 +905,10 @@ const CreateInterviewAgent = ({
       const matched = currentConfig.options.find((opt: string) => opt.toLowerCase() === cleanAnswer.toLowerCase());
       if (matched) {
         finalValue = matched;
-        // 🔧 FIX: For quantityKg, extract only the numeric part
         if (currentConfig.id === "quantityKg") {
           const num = parseFloat(finalValue);
           if (!isNaN(num)) {
-            finalValue = num.toString(); // e.g., "70" instead of "70 kg"
+            finalValue = num.toString();
           }
         }
       } else {
@@ -1030,7 +1028,6 @@ const CreateInterviewAgent = ({
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120000);
 
-    // Prepare request body with all fields
     const requestBody = {
       ...farmerDetails,
       userid: currentUserId,
@@ -1041,10 +1038,6 @@ const CreateInterviewAgent = ({
       salePricePerBird: parseFloat(farmerDetails.salePricePerBird) || 0,
       pricePerEgg: parseFloat(farmerDetails.pricePerEgg) || 0,
     };
-
-    // 🔍 DEBUG: Log quantityKg raw and parsed
-    console.log("🔍 [generateSession] quantityKg raw:", farmerDetails.quantityKg);
-    console.log("🔍 [generateSession] quantityKg parsed:", parseFloat(farmerDetails.quantityKg) || 0);
 
     console.log("📤 [generateSession] Sending request body:", JSON.stringify(requestBody, null, 2));
     console.log("🔢 [generateSession] numberOfBirds from farmerDetails:", farmerDetails.numberOfBirds);
@@ -1108,7 +1101,6 @@ const CreateInterviewAgent = ({
     const q = allQuestions[configStep];
     if (!q) return null;
 
-    // 🔍 DEBUG: Log every question's id, placeholder, and type
     console.log(`🔍 [renderInput] q.id: ${q.id}, q.placeholder: ${q.placeholder}, q.type: ${q.type}`);
 
     if (q.type === "dropdown") {
@@ -1208,7 +1200,6 @@ const CreateInterviewAgent = ({
       );
     }
 
-    // --- TEXT INPUTS (with autocomplete off) ---
     if (q.type === "text") {
       return (
         <input
@@ -1227,7 +1218,6 @@ const CreateInterviewAgent = ({
       );
     }
 
-    // Fallback for any other type
     return (
       <input
         type="text"
