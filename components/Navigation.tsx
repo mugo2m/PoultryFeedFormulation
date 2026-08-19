@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from "next/link";
@@ -12,11 +11,15 @@ import {
 } from "lucide-react";
 import { signOut } from "@/lib/actions/auth.action";
 import { toast } from "sonner";
-import { useState, useEffect } from "react";
+import {
+  useState,
+  useEffect,
+} from "react";
 import { useOfflineTranslation } from "@/lib/hooks/useOfflineTranslation";
 
 export default function Navigation() {
-  const pathname = usePathname();
+  const pathname =
+    usePathname();
 
   const [isAdmin, setIsAdmin] =
     useState(false);
@@ -39,10 +42,11 @@ export default function Navigation() {
     params?: any
   ): string => {
     try {
-      const result = t(
-        key,
-        params
-      );
+      const result =
+        t(
+          key,
+          params
+        );
 
       // Handle if result is a Promise
       if (
@@ -60,7 +64,9 @@ export default function Navigation() {
       return typeof result ===
         "string"
         ? result
-        : String(result || "");
+        : String(
+            result || ""
+          );
     } catch (e) {
       console.error(
         "Translation error for key:",
@@ -95,14 +101,36 @@ export default function Navigation() {
    * Speak a message using the browser's
    * Speech Synthesis API while highlighting
    * each spoken word like karaoke.
+   *
+   * The current application does not render
+   * this karaoke text visually, so the farmer
+   * hears the message without seeing it.
    */
   const speakKaraokeMessage =
     async (
       message: string
     ): Promise<void> => {
-      setKaraokeText(message);
-      setKaraokeWordIndex(-1);
-      setKaraokeActive(true);
+      /*
+       * Do not speak an empty message or
+       * a translation key.
+       */
+      if (
+        !message ||
+        message ===
+          "sign_out_success_message"
+      ) {
+        return;
+      }
+
+      setKaraokeText(
+        message
+      );
+      setKaraokeWordIndex(
+        -1
+      );
+      setKaraokeActive(
+        true
+      );
 
       if (
         typeof window ===
@@ -112,7 +140,14 @@ export default function Navigation() {
           window
         )
       ) {
-        setKaraokeActive(false);
+        setKaraokeText("");
+        setKaraokeWordIndex(
+          -1
+        );
+        setKaraokeActive(
+          false
+        );
+
         return;
       }
 
@@ -128,6 +163,23 @@ export default function Navigation() {
             100
           )
       );
+
+      const voices =
+        window.speechSynthesis.getVoices();
+
+      const preferredVoice =
+        voices.find(
+          (voice) =>
+            /Microsoft Jenny|Microsoft Aria|Google UK English Female|Google US English Female|Samantha|Microsoft Zira/i.test(
+              voice.name
+            )
+        ) ??
+        voices.find(
+          (voice) =>
+            /^en/i.test(
+              voice.lang
+            )
+        );
 
       const utterance =
         new SpeechSynthesisUtterance(
@@ -148,19 +200,9 @@ export default function Navigation() {
       utterance.volume =
         1;
 
-      const voices =
-        window.speechSynthesis.getVoices();
-
-      // Prefer natural-sounding English voices.
-      const preferredVoice =
-        voices.find(
-          (voice) =>
-            /Microsoft Jenny|Microsoft Aria|Google UK English Female|Google US English Female|Samantha|Microsoft Zira/i.test(
-              voice.name
-            )
-        );
-
-      if (preferredVoice) {
+      if (
+        preferredVoice
+      ) {
         utterance.voice =
           preferredVoice;
       }
@@ -172,6 +214,39 @@ export default function Navigation() {
 
       return new Promise<void>(
         (resolve) => {
+          let completed =
+            false;
+
+          const finish =
+            () => {
+              if (
+                completed
+              ) {
+                return;
+              }
+
+              completed =
+                true;
+
+              setKaraokeWordIndex(
+                words.length - 1
+              );
+
+              setKaraokeActive(
+                false
+              );
+
+              setKaraokeText(
+                ""
+              );
+
+              setKaraokeWordIndex(
+                -1
+              );
+
+              resolve();
+            };
+
           /**
            * onboundary fires as the speech
            * reaches individual words.
@@ -215,28 +290,11 @@ export default function Navigation() {
            * has been spoken.
            */
           utterance.onend =
-            () => {
-              setKaraokeWordIndex(
-                words.length - 1
-              );
-
-              setKaraokeActive(
-                false
-              );
-              setKaraokeText(
-                ""
-              );
-              setKaraokeWordIndex(
-                -1
-              );
-
-              resolve();
-            };
+            finish;
 
           /**
            * If the browser's speech engine
-           * encounters an error, don't leave
-           * the UI stuck in "Speaking..."
+           * encounters an error.
            */
           utterance.onerror =
             (event) => {
@@ -245,17 +303,7 @@ export default function Navigation() {
                 event
               );
 
-              setKaraokeActive(
-                false
-              );
-              setKaraokeText(
-                ""
-              );
-              setKaraokeWordIndex(
-                -1
-              );
-
-              resolve();
+              finish();
             };
 
           window.speechSynthesis.speak(
@@ -267,28 +315,73 @@ export default function Navigation() {
 
   /**
    * Handle farmer sign out.
+   *
+   * IMPORTANT:
+   *
+   * 1. Get translation.
+   * 2. Speak complete message.
+   * 3. Wait 500 ms.
+   * 4. Sign out.
+   * 5. Redirect.
+   *
+   * This prevents Navigation from being
+   * unmounted while speech is still playing.
    */
   const handleSignOut =
     async () => {
       try {
-        // Sign out from the application.
-        await signOut();
-
-        // Get the translated sign-out message.
-        // The farmer hears this message only; it is not displayed.
+        /*
+         * Get the translated sign-out message
+         * before changing authentication state.
+         */
         const message =
           safeT(
-            "sign_out_success_message",
-            "You have signed out successfully. Welcome again !!"
+            "sign_out_success_message"
           );
 
-        // Speak the translated message with the existing
-        // karaoke timing, but keep all text hidden.
+        /*
+         * Never speak the translation key.
+         */
+        if (
+          !message ||
+          message ===
+            "sign_out_success_message"
+        ) {
+          console.warn(
+            "Translation not ready for sign_out_success_message"
+          );
+
+          return;
+        }
+
+        /*
+         * Speak the complete translated
+         * message first.
+         */
         await speakKaraokeMessage(
           message
         );
 
-        // Redirect to sign-in.
+        /*
+         * Give the speech engine a short
+         * safety pause after onend.
+         */
+        await new Promise<void>(
+          (resolve) =>
+            setTimeout(
+              resolve,
+              500
+            )
+        );
+
+        /*
+         * Only now sign the farmer out.
+         */
+        await signOut();
+
+        /*
+         * Finally redirect to sign-in.
+         */
         window.location.href =
           "/sign-in";
       } catch (error) {
@@ -303,8 +396,10 @@ export default function Navigation() {
           )
         );
 
-        // Still redirect to sign-in if
-        // the server-side sign-out fails.
+        /*
+         * Still redirect to sign-in if
+         * the server-side sign-out fails.
+         */
         window.location.href =
           "/sign-in";
       }
@@ -313,12 +408,15 @@ export default function Navigation() {
   const navItems = [
     {
       href: "/",
-      label: safeT("home"),
+      label: safeT(
+        "home"
+      ),
       icon: Home,
     },
 
     {
-      href: "/ask-multimodal",
+      href:
+        "/ask-multimodal",
       label: safeT(
         "ask_with_images"
       ),
@@ -328,7 +426,8 @@ export default function Navigation() {
 
   if (isAdmin) {
     navItems.push({
-      href: "/admin/multimodal",
+      href:
+        "/admin/multimodal",
       label: safeT(
         "upload_documents"
       ),
@@ -338,6 +437,7 @@ export default function Navigation() {
 
   return (
     <nav className="bg-white border-b border-gray-200 py-3 px-6">
+
       <div className="container mx-auto flex items-center justify-between">
 
         <div className="flex items-center gap-8">
@@ -353,6 +453,7 @@ export default function Navigation() {
           </Link>
 
           <div className="flex gap-4">
+
             {navItems.map(
               (item) => {
                 const Icon =
@@ -375,11 +476,14 @@ export default function Navigation() {
                   >
                     <Icon className="w-4 h-4" />
 
-                    {item.label}
+                    {
+                      item.label
+                    }
                   </Link>
                 );
               }
             )}
+
           </div>
         </div>
 
@@ -397,12 +501,15 @@ export default function Navigation() {
               : ""
           }`}
         >
+
           <LogOut className="w-4 h-4" />
 
           {safeT(
             "sign_out"
           )}
+
         </button>
+
       </div>
 
     </nav>

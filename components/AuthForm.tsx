@@ -7,7 +7,11 @@ import { toast } from "sonner";
 import { auth } from "@/firebase/client";
 import { useForm } from "react-hook-form";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 import {
@@ -139,45 +143,72 @@ const AuthForm = ({
 
   const {
     t,
+    ready,
   } = useOfflineTranslation();
 
   const [
     authMethod,
-    setAuthMethod
-  ] =
-    useState<
-      "email" | "phone"
-    >("email");
+    setAuthMethod,
+  ] = useState<
+    "email" | "phone"
+  >("email");
 
   /*
-   * These states are retained because
-   * they are part of the original component.
+   * These states are retained from the
+   * original component.
+   *
+   * They are kept empty for voice-only
+   * messages so that no visible karaoke
+   * message is displayed.
    */
   const [
     karaokeText,
-    setKaraokeText
+    setKaraokeText,
   ] = useState("");
 
   const [
     karaokeWordIndex,
-    setKaraokeWordIndex
+    setKaraokeWordIndex,
   ] = useState(-1);
 
   const [
     karaokeActive,
-    setKaraokeActive
+    setKaraokeActive,
   ] = useState(false);
 
   /*
-   * Safe translation helper.
+   * ============================================================
+   * SIGN-IN GUIDANCE REFS
+   * ============================================================
+   */
+
+  const signInGuidanceTimerRef =
+    useRef<
+      ReturnType<typeof setTimeout> | null
+    >(null);
+
+  const signInGuidanceStoppedRef =
+    useRef(false);
+
+  const signInGuidanceSpeakingRef =
+    useRef(false);
+
+  /*
+   * ============================================================
+   * SAFE TRANSLATION HELPER
+   * ============================================================
    */
   const safeT = (
     key: string,
     fallback?: string
   ): string => {
     try {
-      const result = t(key);
+      const result =
+        t(key);
 
+      /*
+       * Handle if result is a Promise.
+       */
       if (
         result &&
         typeof (result as any).then ===
@@ -189,9 +220,13 @@ const AuthForm = ({
         );
       }
 
+      /*
+       * Never treat the translation key
+       * itself as a valid translation.
+       */
       if (
         typeof result ===
-        "string" &&
+          "string" &&
         result !== key
       ) {
         return result;
@@ -211,6 +246,86 @@ const AuthForm = ({
 
   /*
    * ============================================================
+   * WAIT FOR BROWSER VOICES
+   * ============================================================
+   */
+  const waitForVoices =
+    async (
+      maxAttempts = 10
+    ): Promise<
+      SpeechSynthesisVoice[]
+    > => {
+      if (
+        typeof window ===
+          "undefined" ||
+        !(
+          "speechSynthesis" in
+          window
+        )
+      ) {
+        return [];
+      }
+
+      for (
+        let attempt = 0;
+        attempt < maxAttempts;
+        attempt++
+      ) {
+        const voices =
+          window.speechSynthesis.getVoices();
+
+        if (
+          voices.length > 0
+        ) {
+          return voices;
+        }
+
+        await new Promise<void>(
+          (resolve) =>
+            setTimeout(
+              resolve,
+              300
+            )
+        );
+      }
+
+      return window.speechSynthesis.getVoices();
+    };
+
+  /*
+   * ============================================================
+   * SELECT BEST ENGLISH VOICE
+   * ============================================================
+   */
+  const getPreferredEnglishVoice =
+    (
+      voices: SpeechSynthesisVoice[]
+    ): SpeechSynthesisVoice | null => {
+      return (
+        voices.find(
+          (voice) =>
+            /Microsoft Jenny|Microsoft Aria|Google UK English Female|Google US English Female|Samantha|Microsoft Zira/i.test(
+              voice.name
+            )
+        ) ??
+        voices.find(
+          (voice) =>
+            /^en-/i.test(
+              voice.lang
+            )
+        ) ??
+        voices.find(
+          (voice) =>
+            /^en/i.test(
+              voice.lang
+            )
+        ) ??
+        null
+      );
+    };
+
+  /*
+   * ============================================================
    * SIGN-IN SUCCESS VOICE
    * ============================================================
    *
@@ -218,26 +333,32 @@ const AuthForm = ({
    *
    * sign_in_success_message
    *
-   * Example:
-   *
-   * "sign_in_success_message":
-   * "You have signed in to Hugos Poultry Feed Formulation."
-   *
-   * The message is spoken only.
-   * It is NOT displayed as a toast.
-   * It is NOT displayed as karaoke text.
+   * Voice only.
+   * No toast.
+   * No visible karaoke text.
    */
   const speakSignInSuccess =
     async (): Promise<void> => {
       const message =
         safeT(
-          "sign_in_success_message",
-          "You have signed in to Hugos Poultry Feed Formulation."
+          "sign_in_success_message"
         );
 
       /*
-       * Make sure no old speech is still running.
+       * Never speak the translation key.
        */
+      if (
+        !message ||
+        message ===
+          "sign_in_success_message"
+      ) {
+        console.warn(
+          "Translation not ready for sign_in_success_message"
+        );
+
+        return;
+      }
+
       if (
         typeof window ===
           "undefined" ||
@@ -249,13 +370,11 @@ const AuthForm = ({
         return;
       }
 
+      /*
+       * Cancel any speech already playing.
+       */
       window.speechSynthesis.cancel();
 
-      /*
-       * Give the browser a moment to
-       * finish cancelling any previous
-       * utterance.
-       */
       await new Promise<void>(
         (resolve) =>
           setTimeout(
@@ -263,6 +382,20 @@ const AuthForm = ({
             100
           )
       );
+
+      const voices =
+        await waitForVoices();
+
+      if (
+        typeof window ===
+          "undefined" ||
+        !(
+          "speechSynthesis" in
+          window
+        )
+      ) {
+        return;
+      }
 
       const utterance =
         new SpeechSynthesisUtterance(
@@ -272,8 +405,12 @@ const AuthForm = ({
       utterance.lang =
         "en-US";
 
+      /*
+       * Slower rate makes the complete
+       * message easier to hear.
+       */
       utterance.rate =
-        0.9;
+        0.85;
 
       utterance.pitch =
         1.05;
@@ -281,19 +418,9 @@ const AuthForm = ({
       utterance.volume =
         1;
 
-      /*
-       * Try to use a natural-sounding
-       * English voice.
-       */
-      const voices =
-        window.speechSynthesis.getVoices();
-
       const preferredVoice =
-        voices.find(
-          (voice) =>
-            /Microsoft Jenny|Microsoft Aria|Google UK English Female|Google US English Female|Samantha|Microsoft Zira/i.test(
-              voice.name
-            )
+        getPreferredEnglishVoice(
+          voices
         );
 
       if (
@@ -304,16 +431,29 @@ const AuthForm = ({
       }
 
       /*
-       * No visible karaoke text is set.
+       * Make sure no visible karaoke
+       * message is shown.
        */
       setKaraokeText("");
       setKaraokeWordIndex(-1);
       setKaraokeActive(false);
 
-      return new Promise<void>(
+      await new Promise<void>(
         (resolve) => {
-          utterance.onend =
+          let finished =
+            false;
+
+          const finish =
             () => {
+              if (
+                finished
+              ) {
+                return;
+              }
+
+              finished =
+                true;
+
               setKaraokeText("");
               setKaraokeWordIndex(-1);
               setKaraokeActive(false);
@@ -321,13 +461,19 @@ const AuthForm = ({
               resolve();
             };
 
-          utterance.onerror =
+          utterance.onend =
             () => {
-              setKaraokeText("");
-              setKaraokeWordIndex(-1);
-              setKaraokeActive(false);
+              finish();
+            };
 
-              resolve();
+          utterance.onerror =
+            (error) => {
+              console.error(
+                "Sign-in success speech error:",
+                error
+              );
+
+              finish();
             };
 
           window.speechSynthesis.speak(
@@ -346,19 +492,42 @@ const AuthForm = ({
    *
    * sign_in_guidance
    *
-   * The message is spoken automatically when
-   * the sign-in page opens.
+   * The message repeats:
    *
-   * It is voice-only.
-   * No visible text is displayed.
+   * 1. Speak complete sentence.
+   * 2. Wait 2 seconds.
+   * 3. Speak again.
+   *
+   * It stops immediately when the farmer
+   * enters information.
    */
   const speakSignInGuidance =
     async (): Promise<void> => {
+      if (
+        signInGuidanceStoppedRef.current
+      ) {
+        return;
+      }
+
       const message =
         safeT(
-          "sign_in_guidance",
-          "Please sign in using your phone number or email. If you have no account, please create one by pressing Sign Up."
+          "sign_in_guidance"
         );
+
+      /*
+       * Never speak the translation key.
+       */
+      if (
+        !message ||
+        message ===
+          "sign_in_guidance"
+      ) {
+        console.warn(
+          "Translation not ready for sign_in_guidance"
+        );
+
+        return;
+      }
 
       if (
         typeof window ===
@@ -372,21 +541,50 @@ const AuthForm = ({
       }
 
       /*
-       * Cancel any previous speech.
+       * Prevent overlapping speech.
+       */
+      if (
+        signInGuidanceSpeakingRef.current
+      ) {
+        return;
+      }
+
+      signInGuidanceSpeakingRef.current =
+        true;
+
+      /*
+       * Stop any previous speech.
        */
       window.speechSynthesis.cancel();
 
-      /*
-       * Give the browser a short moment
-       * before starting the guidance.
-       */
       await new Promise<void>(
         (resolve) =>
           setTimeout(
             resolve,
-            300
+            100
           )
       );
+
+      if (
+        signInGuidanceStoppedRef.current
+      ) {
+        signInGuidanceSpeakingRef.current =
+          false;
+
+        return;
+      }
+
+      const voices =
+        await waitForVoices();
+
+      if (
+        signInGuidanceStoppedRef.current
+      ) {
+        signInGuidanceSpeakingRef.current =
+          false;
+
+        return;
+      }
 
       const utterance =
         new SpeechSynthesisUtterance(
@@ -405,15 +603,9 @@ const AuthForm = ({
       utterance.volume =
         1;
 
-      const voices =
-        window.speechSynthesis.getVoices();
-
       const preferredVoice =
-        voices.find(
-          (voice) =>
-            /Microsoft Jenny|Microsoft Aria|Google UK English Female|Google US English Female|Samantha|Microsoft Zira/i.test(
-              voice.name
-            )
+        getPreferredEnglishVoice(
+          voices
         );
 
       if (
@@ -425,7 +617,6 @@ const AuthForm = ({
 
       /*
        * Voice only.
-       * Keep all visual karaoke states empty.
        */
       setKaraokeText("");
       setKaraokeWordIndex(-1);
@@ -433,13 +624,62 @@ const AuthForm = ({
 
       await new Promise<void>(
         (resolve) => {
+          let finished =
+            false;
+
+          const completeSpeech =
+            () => {
+              if (
+                finished
+              ) {
+                return;
+              }
+
+              finished =
+                true;
+
+              signInGuidanceSpeakingRef.current =
+                false;
+
+              /*
+               * Do not schedule another
+               * repetition after the farmer
+               * has begun entering information.
+               */
+              if (
+                signInGuidanceStoppedRef.current
+              ) {
+                resolve();
+
+                return;
+              }
+
+              /*
+               * Wait TWO seconds after
+               * the complete sentence.
+               */
+              signInGuidanceTimerRef.current =
+                setTimeout(
+                  () => {
+                    if (
+                      signInGuidanceStoppedRef.current
+                    ) {
+                      resolve();
+
+                      return;
+                    }
+
+                    void speakSignInGuidance();
+
+                    resolve();
+                  },
+                  2000
+                );
+            };
+
           utterance.onend =
             () => {
-              setKaraokeText("");
-              setKaraokeWordIndex(-1);
-              setKaraokeActive(false);
-
-              resolve();
+              completeSpeech();
             };
 
           utterance.onerror =
@@ -449,11 +689,7 @@ const AuthForm = ({
                 error
               );
 
-              setKaraokeText("");
-              setKaraokeWordIndex(-1);
-              setKaraokeActive(false);
-
-              resolve();
+              completeSpeech();
             };
 
           window.speechSynthesis.speak(
@@ -464,28 +700,209 @@ const AuthForm = ({
     };
 
   /*
-   * Automatically speak the guidance when
-   * the sign-in page opens.
+   * ============================================================
+   * STOP SIGN-IN GUIDANCE
+   * ============================================================
+   */
+  const stopSignInGuidance =
+    () => {
+      /*
+       * Prevent all future repetitions.
+       */
+      signInGuidanceStoppedRef.current =
+        true;
+
+      /*
+       * Prevent a new utterance from
+       * being started.
+       */
+      signInGuidanceSpeakingRef.current =
+        false;
+
+      /*
+       * Cancel scheduled repetition.
+       */
+      if (
+        signInGuidanceTimerRef.current
+      ) {
+        clearTimeout(
+          signInGuidanceTimerRef.current
+        );
+
+        signInGuidanceTimerRef.current =
+          null;
+      }
+
+      /*
+       * Stop current voice immediately.
+       */
+      if (
+        typeof window !==
+          "undefined" &&
+        "speechSynthesis" in
+          window
+      ) {
+        window.speechSynthesis.cancel();
+      }
+
+      setKaraokeText("");
+      setKaraokeWordIndex(-1);
+      setKaraokeActive(false);
+    };
+
+  /*
+   * ============================================================
+   * EMAIL FORM
+   * ============================================================
+   */
+  const emailForm =
+    useForm<
+      z.infer<
+        typeof emailSignUpSchema |
+        typeof emailSignInSchema
+      >
+    >({
+      resolver:
+        zodResolver(
+          type ===
+            "sign-up"
+            ? emailSignUpSchema
+            : emailSignInSchema
+        ),
+
+      defaultValues: {
+        name: "",
+        email: "",
+        password: "",
+      },
+    });
+
+  /*
+   * ============================================================
+   * PHONE FORM
+   * ============================================================
+   */
+  const phoneForm =
+    useForm<
+      z.infer<
+        typeof phoneSignUpSchema |
+        typeof phoneSignInSchema
+      >
+    >({
+      resolver:
+        zodResolver(
+          type ===
+            "sign-up"
+            ? phoneSignUpSchema
+            : phoneSignInSchema
+        ),
+
+      defaultValues: {
+        name: "",
+        countryCode:
+          "+254",
+        phoneNumber:
+          "",
+        pin: "",
+      },
+    });
+
+  /*
+   * ============================================================
+   * SIGN-IN GUIDANCE START
+   * ============================================================
+   *
+   * IMPORTANT:
+   * This is AFTER emailForm and phoneForm
+   * have been initialized.
    */
   useEffect(() => {
     if (
-      type !== "sign-in"
+      type !==
+        "sign-in" ||
+      !ready
     ) {
       return;
     }
 
-    const timer =
+    /*
+     * Reset guidance state when the
+     * sign-in page opens.
+     */
+    signInGuidanceStoppedRef.current =
+      false;
+
+    signInGuidanceSpeakingRef.current =
+      false;
+
+    if (
+      signInGuidanceTimerRef.current
+    ) {
+      clearTimeout(
+        signInGuidanceTimerRef.current
+      );
+
+      signInGuidanceTimerRef.current =
+        null;
+    }
+
+    /*
+     * Verify the translation is available
+     * before starting speech.
+     */
+    const message =
+      safeT(
+        "sign_in_guidance"
+      );
+
+    if (
+      !message ||
+      message ===
+        "sign_in_guidance"
+    ) {
+      console.warn(
+        "Cannot start sign-in guidance because translation is not ready."
+      );
+
+      return;
+    }
+
+    /*
+     * Give the page a short moment to render.
+     */
+    const initialTimer =
       window.setTimeout(
         () => {
-          void speakSignInGuidance();
+          if (
+            !signInGuidanceStoppedRef.current
+          ) {
+            void speakSignInGuidance();
+          }
         },
         700
       );
 
     return () => {
       window.clearTimeout(
-        timer
+        initialTimer
       );
+
+      if (
+        signInGuidanceTimerRef.current
+      ) {
+        clearTimeout(
+          signInGuidanceTimerRef.current
+        );
+
+        signInGuidanceTimerRef.current =
+          null;
+      }
+
+      signInGuidanceStoppedRef.current =
+        true;
+
+      signInGuidanceSpeakingRef.current =
+        false;
 
       if (
         typeof window !==
@@ -496,20 +913,113 @@ const AuthForm = ({
         window.speechSynthesis.cancel();
       }
     };
-  }, [type]);
+  }, [
+    type,
+    ready,
+  ]);
+
+  /*
+   * ============================================================
+   * STOP GUIDANCE WHEN EMAIL FORM GETS INPUT
+   * ============================================================
+   *
+   * These effects are deliberately AFTER
+   * emailForm and phoneForm initialization.
+   */
+  useEffect(() => {
+    if (
+      type !==
+      "sign-in"
+    ) {
+      return;
+    }
+
+    const subscription =
+      emailForm.watch(
+        (values) => {
+          const email =
+            String(
+              values.email ??
+                ""
+            ).trim();
+
+          const password =
+            String(
+              values.password ??
+                ""
+            ).trim();
+
+          if (
+            email ||
+            password
+          ) {
+            stopSignInGuidance();
+          }
+        }
+      );
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [
+    type,
+    emailForm,
+  ]);
+
+  /*
+   * ============================================================
+   * STOP GUIDANCE WHEN PHONE FORM GETS INPUT
+   * ============================================================
+   */
+  useEffect(() => {
+    if (
+      type !==
+      "sign-in"
+    ) {
+      return;
+    }
+
+    const subscription =
+      phoneForm.watch(
+        (values) => {
+          const phoneNumber =
+            String(
+              values.phoneNumber ??
+                ""
+            ).trim();
+
+          const pin =
+            String(
+              values.pin ??
+                ""
+            ).trim();
+
+          if (
+            phoneNumber ||
+            pin
+          ) {
+            stopSignInGuidance();
+          }
+        }
+      );
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [
+    type,
+    phoneForm,
+  ]);
 
   /*
    * ============================================================
    * PHONE MESSAGE VOICE
    * ============================================================
    *
-   * Used for:
+   * Translation keys:
    *
    * phone_already_registered
    * phone_account_created
-   *
-   * Both messages are voice-only.
-   * No toast or visible karaoke text is shown.
    */
   const speakPhoneMessage =
     async (
@@ -522,6 +1032,21 @@ const AuthForm = ({
           fallback
         );
 
+      /*
+       * Never speak a translation key.
+       */
+      if (
+        !message ||
+        message ===
+          key
+      ) {
+        console.warn(
+          `Translation not ready for ${key}`
+        );
+
+        return;
+      }
+
       if (
         typeof window ===
           "undefined" ||
@@ -533,9 +1058,6 @@ const AuthForm = ({
         return;
       }
 
-      /*
-       * Cancel any speech currently running.
-       */
       window.speechSynthesis.cancel();
 
       await new Promise<void>(
@@ -545,6 +1067,9 @@ const AuthForm = ({
             100
           )
       );
+
+      const voices =
+        await waitForVoices();
 
       const utterance =
         new SpeechSynthesisUtterance(
@@ -563,18 +1088,9 @@ const AuthForm = ({
       utterance.volume =
         1;
 
-      /*
-       * Select a natural English voice.
-       */
-      const voices =
-        window.speechSynthesis.getVoices();
-
       const preferredVoice =
-        voices.find(
-          (voice) =>
-            /Microsoft Jenny|Microsoft Aria|Google UK English Female|Google US English Female|Samantha|Microsoft Zira/i.test(
-              voice.name
-            )
+        getPreferredEnglishVoice(
+          voices
         );
 
       if (
@@ -585,8 +1101,7 @@ const AuthForm = ({
       }
 
       /*
-       * Keep all karaoke states visually empty.
-       * The message is heard only.
+       * Voice only.
        */
       setKaraokeText("");
       setKaraokeWordIndex(-1);
@@ -594,8 +1109,20 @@ const AuthForm = ({
 
       await new Promise<void>(
         (resolve) => {
-          utterance.onend =
+          let finished =
+            false;
+
+          const finish =
             () => {
+              if (
+                finished
+              ) {
+                return;
+              }
+
+              finished =
+                true;
+
               setKaraokeText("");
               setKaraokeWordIndex(-1);
               setKaraokeActive(false);
@@ -603,13 +1130,19 @@ const AuthForm = ({
               resolve();
             };
 
-          utterance.onerror =
+          utterance.onend =
             () => {
-              setKaraokeText("");
-              setKaraokeWordIndex(-1);
-              setKaraokeActive(false);
+              finish();
+            };
 
-              resolve();
+          utterance.onerror =
+            (error) => {
+              console.error(
+                "Phone message speech error:",
+                error
+              );
+
+              finish();
             };
 
           window.speechSynthesis.speak(
@@ -619,54 +1152,23 @@ const AuthForm = ({
       );
     };
 
-  // Email form
-  const emailForm =
-    useForm<
-      z.infer<
-        typeof emailSignUpSchema |
-        typeof emailSignInSchema
-      >
-    >({
-      resolver: zodResolver(
-        type === "sign-up"
-          ? emailSignUpSchema
-          : emailSignInSchema
-      ),
-
-      defaultValues: {
-        name: "",
-        email: "",
-        password: "",
-      },
-    });
-
-  // Phone form
-  const phoneForm =
-    useForm<
-      z.infer<
-        typeof phoneSignUpSchema |
-        typeof phoneSignInSchema
-      >
-    >({
-      resolver: zodResolver(
-        type === "sign-up"
-          ? phoneSignUpSchema
-          : phoneSignInSchema
-      ),
-
-      defaultValues: {
-        name: "",
-        countryCode: "+254",
-        phoneNumber: "",
-        pin: "",
-      },
-    });
-
+  /*
+   * ============================================================
+   * EMAIL SUBMIT
+   * ============================================================
+   */
   const onEmailSubmit =
     async (data: any) => {
       try {
+        /*
+         * Stop repeated guidance as soon
+         * as the farmer submits.
+         */
+        stopSignInGuidance();
+
         if (
-          type === "sign-up"
+          type ===
+          "sign-up"
         ) {
           const {
             name,
@@ -685,7 +1187,8 @@ const AuthForm = ({
             await signUp({
               uid:
                 userCredential
-                  .user.uid,
+                  .user
+                  .uid,
               name,
               email,
               password,
@@ -714,6 +1217,9 @@ const AuthForm = ({
             password,
           } = data;
 
+          /*
+           * First verify Firebase credentials.
+           */
           const userCredential =
             await signInWithEmailAndPassword(
               auth,
@@ -724,25 +1230,39 @@ const AuthForm = ({
           const idToken =
             await userCredential.user.getIdToken();
 
+          /*
+           * IMPORTANT:
+           *
+           * Speak BEFORE calling the server-side
+           * signIn action, so authentication-state
+           * changes cannot interrupt the speech.
+           */
+          await speakSignInSuccess();
+
+          /*
+           * Safety pause after complete speech.
+           */
+          await new Promise<void>(
+            (resolve) =>
+              setTimeout(
+                resolve,
+                500
+              )
+          );
+
+          /*
+           * Complete server-side sign-in.
+           */
           await signIn({
             email,
             idToken,
           });
 
           /*
-           * SUCCESS:
-           *
-           * No visible toast.
-           * Speak the translated message only.
+           * Redirect only after speech has completed.
            */
-          await speakSignInSuccess();
-
-          setTimeout(
-            () =>
-              (window.location.href =
-                "/"),
-            1500
-          );
+          window.location.href =
+            "/";
         }
       } catch (
         error: any
@@ -753,9 +1273,19 @@ const AuthForm = ({
       }
     };
 
+  /*
+   * ============================================================
+   * PHONE SUBMIT
+   * ============================================================
+   */
   const onPhoneSubmit =
     async (data: any) => {
       try {
+        /*
+         * Stop repeated sign-in guidance.
+         */
+        stopSignInGuidance();
+
         const {
           name,
           countryCode,
@@ -767,7 +1297,8 @@ const AuthForm = ({
           `${countryCode}${phoneNumber}`;
 
         if (
-          type === "sign-up"
+          type ===
+          "sign-up"
         ) {
           const result =
             await createPhoneAccount(
@@ -784,12 +1315,6 @@ const AuthForm = ({
           ) {
             /*
              * PHONE NUMBER ALREADY REGISTERED
-             *
-             * Voice only.
-             * No visible toast.
-             *
-             * We use the translation key
-             * phone_already_registered.
              */
             const errorMessage =
               typeof result.message ===
@@ -814,46 +1339,46 @@ const AuthForm = ({
               );
 
               /*
-               * After the voice message has
-               * finished, send the farmer to
-               * the sign-in page.
+               * Redirect after the complete
+               * voice message.
                */
               router.push(
                 "/sign-in"
               );
 
               return;
-            } else {
-              /*
-               * Preserve all other existing
-               * error behavior.
-               */
-              toast.error(
-                result.message
-              );
             }
+
+            /*
+             * Preserve all other
+             * existing error behavior.
+             */
+            toast.error(
+              result.message
+            );
 
             return;
           }
 
           /*
            * PHONE ACCOUNT CREATED SUCCESSFULLY
-           *
-           * Voice only.
-           * No visible toast.
-           *
-           * Uses translation key:
-           * phone_account_created
            */
           await speakPhoneMessage(
             "phone_account_created",
             "Phone account created successfully. Please sign in."
           );
 
+          /*
+           * Redirect after the complete
+           * voice message.
+           */
           router.push(
             "/sign-in"
           );
         } else {
+          /*
+           * PHONE SIGN-IN
+           */
           const result =
             await signInWithPhone(
               {
@@ -883,6 +1408,26 @@ const AuthForm = ({
           const idToken =
             await userCredential.user.getIdToken();
 
+          /*
+           * Speak BEFORE the server-side
+           * sign-in action.
+           */
+          await speakSignInSuccess();
+
+          /*
+           * Safety pause after complete speech.
+           */
+          await new Promise<void>(
+            (resolve) =>
+              setTimeout(
+                resolve,
+                500
+              )
+          );
+
+          /*
+           * Complete server-side sign-in.
+           */
           await signIn({
             email:
               result.email!,
@@ -890,19 +1435,10 @@ const AuthForm = ({
           });
 
           /*
-           * SUCCESS:
-           *
-           * No visible toast.
-           * Speak the translated message only.
+           * Redirect after speech is finished.
            */
-          await speakSignInSuccess();
-
-          setTimeout(
-            () =>
-              (window.location.href =
-                "/"),
-            1500
-          );
+          window.location.href =
+            "/";
         }
       } catch (
         error: any
@@ -914,13 +1450,16 @@ const AuthForm = ({
     };
 
   const isSignIn =
-    type === "sign-in";
+    type ===
+    "sign-in";
 
   return (
     <div className="card-border lg:min-w-[566px]">
+
       <div className="flex flex-col gap-6 card py-14 px-10">
 
         <div className="flex flex-row gap-2 justify-center">
+
           <Image
             src="/logo.svg"
             alt="logo"
@@ -931,13 +1470,13 @@ const AuthForm = ({
           <h2 className="text-primary-100">
             hugos
           </h2>
+
         </div>
 
         {/*
-         * The original karaoke sign-in display
-         * is intentionally not rendered.
-         *
-         * Sign-in success is voice-only.
+         * All requested voice messages are
+         * voice-only. No karaoke message panel
+         * is rendered here.
          */}
 
         <h3 className="text-center">
@@ -949,6 +1488,7 @@ const AuthForm = ({
           defaultValue="email"
           className="w-full"
         >
+
           <TabsList className="grid w-full grid-cols-2">
 
             <TabsTrigger
@@ -978,11 +1518,16 @@ const AuthForm = ({
           {/* Email Tab Content */}
           <TabsContent value="email">
 
-            <Form {...emailForm}>
+            <Form
+              {...emailForm}
+            >
+
               <form
-                onSubmit={emailForm.handleSubmit(
-                  onEmailSubmit
-                )}
+                onSubmit={
+                  emailForm.handleSubmit(
+                    onEmailSubmit
+                  )
+                }
                 className="space-y-6 mt-4"
               >
 
@@ -1028,6 +1573,7 @@ const AuthForm = ({
                 </Button>
 
               </form>
+
             </Form>
 
           </TabsContent>
@@ -1035,11 +1581,16 @@ const AuthForm = ({
           {/* Phone Tab Content */}
           <TabsContent value="phone">
 
-            <Form {...phoneForm}>
+            <Form
+              {...phoneForm}
+            >
+
               <form
-                onSubmit={phoneForm.handleSubmit(
-                  onPhoneSubmit
-                )}
+                onSubmit={
+                  phoneForm.handleSubmit(
+                    onPhoneSubmit
+                  )
+                }
                 className="space-y-6 mt-4"
               >
 
@@ -1070,6 +1621,7 @@ const AuthForm = ({
                       )}
                       className="w-28 px-3 py-2 border rounded-md bg-white dark:bg-gray-800"
                     >
+
                       {countryCodes.map(
                         (
                           country
@@ -1091,6 +1643,7 @@ const AuthForm = ({
                           </option>
                         )
                       )}
+
                     </select>
 
                     <Input
@@ -1104,6 +1657,7 @@ const AuthForm = ({
                     />
 
                   </div>
+
                 </div>
 
                 {/* 4-digit PIN */}
@@ -1139,9 +1693,11 @@ const AuthForm = ({
                 </Button>
 
               </form>
+
             </Form>
 
           </TabsContent>
+
         </Tabs>
 
         {/* Toggle between sign-in and sign-up */}
@@ -1167,6 +1723,7 @@ const AuthForm = ({
         </p>
 
       </div>
+
     </div>
   );
 };

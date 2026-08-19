@@ -1771,5 +1771,6 @@
   "phone_already_registered": "Phone number already registered",
 "phone_account_created": "Phone account created successfully. Please sign in.",
   "sign_in_guidance": "Please sign in using your phone number or email. If you have no account, please create one by pressing Sign Up.",
+  "sign_in_success_message": "You have signed in to Hugos Poultry Feed Formulation.",
   "options": "Options"
 }
