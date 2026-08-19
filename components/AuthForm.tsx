@@ -1480,7 +1480,7 @@ const AuthForm = ({
          */}
 
         <h3 className="text-center">
-          Formulate poultry feed locally
+          Formulate Poultry Feed Locally
         </h3>
 
         {/* Method Selection Tabs - FIXED: Removed onValueChange */}
