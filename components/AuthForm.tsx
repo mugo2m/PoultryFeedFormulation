@@ -1480,7 +1480,7 @@ const AuthForm = ({
          */}
 
         <h3 className="text-center">
-          Practice job interviews with AI
+          Formulate poultry feed locally
         </h3>
 
         {/* Method Selection Tabs - FIXED: Removed onValueChange */}
