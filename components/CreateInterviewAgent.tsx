@@ -995,6 +995,7 @@ const CreateInterviewAgent = ({
     askQuestion(0);
   };
 
+  // ========== ASK QUESTION (UPDATED) ==========
   const askQuestion = async (step: number) => {
     if (!voiceAssistantRef.current || step >= allQuestions.length) return;
     if (isSpeaking) await new Promise(resolve => setTimeout(resolve, 500));
@@ -1010,10 +1011,14 @@ const CreateInterviewAgent = ({
     await voiceAssistantRef.current.speak(question);
 
     const q = allQuestions[step];
-    if (q.type !== "multiselect" && q.type !== "prices") {
+    // --- NEW: Do NOT start listening for location fields ---
+    const locationFields = ["county", "subCounty", "ward", "village"];
+    if (q.type !== "multiselect" && q.type !== "prices" && !locationFields.includes(q.id)) {
       safeStartListening();
     }
+    // --- END OF CHANGE ---
   };
+  // ==========================================
 
   // ========== GENERATE SESSION ==========
   const generateSession = async () => {
@@ -1349,12 +1354,17 @@ const CreateInterviewAgent = ({
                 {allQuestions[configStep]?.type === "multiselect" && (
                   <div className="flex gap-2 mt-4">
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         const selected = farmerDetails.availableIngredients;
-                        if (selected.length === 0) {
-                          toast.warning(safeT('select_at_least_one'));
+                        const allOptions = allQuestions[configStep]?.options || [];
+                        // --- START OF CHANGE: validate ALL ingredients are selected ---
+                        if (selected.length !== allOptions.length) {
+                          const warningMsg = safeT('select_all_ingredients_warning');
+                          toast.warning(warningMsg);
+                          await voiceAssistantRef.current?.speak(warningMsg);
                           return;
                         }
+                        // --- END OF CHANGE ---
                         processAnswer(selected.join(', '));
                       }}
                       className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-500 text-white py-2.5 rounded-xl font-medium"
